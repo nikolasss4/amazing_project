@@ -61,6 +61,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   data: providedData,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [chartHeight, setChartHeight] = useState(240); // Dynamic height
   const data = providedData || generateMockData(20);
   
   // Calculate min/max for scaling
@@ -92,6 +93,14 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     return height - ((price - (minPrice - padding)) / (priceRange + 2 * padding)) * height;
   };
   
+  // Handle layout to get dynamic chart height
+  const onChartLayout = (event: any) => {
+    const { height } = event.nativeEvent.layout;
+    if (height > 0) {
+      setChartHeight(height);
+    }
+  };
+  
   // Format price for display
   const formatPrice = (price: number): string => {
     if (price >= 10000) return `$${Math.round(price).toLocaleString()}`;
@@ -110,44 +119,23 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   
   return (
     <View style={styles.container}>
-      {/* Header with trading pair and expand button */}
+      {/* Header with trading pair */}
       <View style={styles.header}>
         <View style={styles.pairContainer}>
           <Text style={styles.pairText}>{tradingPair}</Text>
           <View style={styles.divider} />
           <Text style={styles.timeframeText}>{timeframe}</Text>
         </View>
-        <Pressable
-          style={styles.expandButton}
-          onPress={() => setIsExpanded(!isExpanded)}
-        >
-          <Ionicons
-            name={isExpanded ? "contract" : "expand"}
-            size={16}
-            color={theme.colors.textSecondary}
-          />
-        </Pressable>
       </View>
       
       {/* Chart area */}
       <GestureDetector gesture={pinchGesture}>
-        <View style={[styles.chartArea, isExpanded && styles.chartAreaExpanded]}>
-          {/* Price axis on right */}
-          <View style={styles.priceAxis}>
-            {priceLevels.map((price, idx) => (
-              <View key={idx} style={styles.priceLevel}>
-                <Text style={styles.priceText}>{formatPrice(price)}</Text>
-              </View>
-            ))}
-          </View>
-          
+        <View style={styles.chartArea} onLayout={onChartLayout}>
           {/* Candlesticks */}
           <Animated.View style={[styles.candlesContainer, animatedStyle]}>
             {data.map((candle, idx) => {
-              const chartHeight = isExpanded ? 300 : 200;
-              const candleWidth = 12;
-              const spacing = 4;
-              const totalWidth = (candleWidth + spacing) * data.length;
+              const candleWidth = 10;
+              const spacing = 3;
               const x = idx * (candleWidth + spacing);
               
               const openY = getPriceY(candle.open, chartHeight);
@@ -204,6 +192,15 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
             })}
           </Animated.View>
           
+          {/* Price axis on right */}
+          <View style={styles.priceAxis}>
+            {priceLevels.map((price, idx) => (
+              <View key={idx} style={styles.priceLevel}>
+                <Text style={styles.priceText}>{formatPrice(price)}</Text>
+              </View>
+            ))}
+          </View>
+          
           {/* Grid lines */}
           <View style={styles.gridLines} pointerEvents="none">
             {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => (
@@ -220,14 +217,6 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
           </View>
         </View>
       </GestureDetector>
-      
-      {/* Zoom hint */}
-      {!isExpanded && (
-        <View style={styles.hintContainer}>
-          <Ionicons name="resize" size={12} color={theme.colors.textTertiary} />
-          <Text style={styles.hintText}>Pinch to zoom</Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -235,15 +224,18 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'rgba(10, 10, 10, 0.8)',
+    backgroundColor: '#000000',
+    borderTopLeftRadius: theme.borderRadius.lg,
+    borderTopRightRadius: theme.borderRadius.lg,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingVertical: theme.spacing.xs,
+    backgroundColor: '#000000',
   },
   pairContainer: {
     flexDirection: 'row',
@@ -265,36 +257,18 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.medium,
     color: theme.colors.textSecondary,
   },
-  expandButton: {
-    padding: theme.spacing.xs,
-  },
   chartArea: {
-    height: 200,
+    flex: 1,
     flexDirection: 'row',
     position: 'relative',
-  },
-  chartAreaExpanded: {
-    height: 300,
-  },
-  priceAxis: {
-    width: 60,
-    justifyContent: 'space-between',
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  },
-  priceLevel: {
-    alignItems: 'flex-end',
-    paddingRight: theme.spacing.sm,
-  },
-  priceText: {
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.medium,
-    color: theme.colors.textSecondary,
+    paddingTop: theme.spacing.xs,
+    paddingBottom: theme.spacing.sm,
   },
   candlesContainer: {
     flex: 1,
     position: 'relative',
-    paddingHorizontal: theme.spacing.md,
+    paddingLeft: theme.spacing.md,
+    paddingRight: theme.spacing.sm,
   },
   candleWrapper: {
     position: 'absolute',
@@ -311,27 +285,29 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 2,
   },
+  priceAxis: {
+    width: 65,
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.xs,
+    paddingRight: theme.spacing.md,
+  },
+  priceLevel: {
+    alignItems: 'flex-end',
+  },
+  priceText: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.medium,
+    color: theme.colors.textSecondary,
+  },
   gridLines: {
     ...StyleSheet.absoluteFillObject,
-    left: 60,
+    paddingRight: 65,
   },
   gridLine: {
     position: 'absolute',
     left: 0,
-    right: 0,
+    right: 65,
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  hintContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.spacing.xs,
-    paddingVertical: theme.spacing.xs,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-  },
-  hintText: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textTertiary,
   },
 });

@@ -9,13 +9,13 @@ interface GlassPanelProps extends ViewProps {
   intensity?: number;
   tint?: 'light' | 'dark' | 'default';
   borderless?: boolean;
-  variant?: 'default' | 'silver';
+  variant?: 'default' | 'silver' | 'black';
 }
 
 /**
  * GlassPanel - Reusable liquid glass component
  * Frosted blur background with subtle border and highlight
- * Supports silver gradient variant for premium cards
+ * Supports silver gradient variant for premium cards and black variant with gradient border
  */
 export const GlassPanel: React.FC<GlassPanelProps> = ({
   children,
@@ -27,10 +27,31 @@ export const GlassPanel: React.FC<GlassPanelProps> = ({
   ...props
 }) => {
   const isSilver = variant === 'silver';
+  const isBlack = variant === 'black';
 
   return (
     <View style={[styles.container, style]} {...props}>
-      {isSilver ? (
+      {isBlack ? (
+        <>
+          {/* Blue gradient border */}
+          <LinearGradient
+            colors={[
+              '#3B82F6',
+              '#8B5CF6',
+              '#3B82F6',
+              '#06B6D4',
+            ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Black background with liquid glass effect */}
+          <View style={styles.blackInner}>
+            <View style={styles.blackSolid} />
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+          </View>
+        </>
+      ) : isSilver ? (
         <>
           {/* Silver gradient background with liquid glass effect */}
           <LinearGradient
@@ -65,7 +86,8 @@ export const GlassPanel: React.FC<GlassPanelProps> = ({
       <View style={[
         styles.overlay,
         borderless && styles.borderless,
-        isSilver && styles.silverBorder
+        isSilver && styles.silverBorder,
+        isBlack && styles.blackBorder
       ]}>
         {children}
       </View>
@@ -79,6 +101,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: theme.colors.glassBackground,
   },
+  blackInner: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    right: 2,
+    bottom: 2,
+    borderRadius: theme.borderRadius.lg - 1,
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
+  blackSolid: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+  },
   overlay: {
     borderWidth: 1,
     borderColor: theme.colors.glassBorder,
@@ -87,8 +123,13 @@ const styles = StyleSheet.create({
   },
   borderless: {
     borderWidth: 0,
+    padding: 0,
   },
   silverBorder: {
     borderColor: 'rgba(200, 210, 220, 0.3)',
+  },
+  blackBorder: {
+    borderWidth: 0,
+    padding: 0,
   },
 });

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -235,7 +235,7 @@ export const ImproveScreen: React.FC = () => {
               {/* Front of card */}
               <GestureDetector gesture={swipeGesture}>
                 <Animated.View style={[styles.card, frontAnimatedStyle, swipeAnimatedStyle]}>
-                  <GlassPanel style={styles.cardContent} borderless variant="silver">
+                  <GlassPanel style={styles.cardContent} variant="black">
                     {/* Top section: Chart (70%) */}
                     <View style={styles.chartSection}>
                       <CandlestickChart
@@ -244,19 +244,14 @@ export const ImproveScreen: React.FC = () => {
                       />
                     </View>
 
-                {/* Bottom section: Split left/right (30%) */}
+                {/* Bottom section: Split left/right (33%) */}
                 <View style={styles.bottomSection}>
                   {/* Left: Scenario text */}
                   <View style={styles.scenarioContainer}>
                     <Text style={styles.scenarioLabel}>SCENARIO</Text>
-                    <ScrollView
-                      style={styles.scenarioScroll}
-                      showsVerticalScrollIndicator={false}
-                    >
-                      <Text style={styles.scenarioText}>
-                        {currentScenario.economicContext}
-                      </Text>
-                    </ScrollView>
+                    <Text style={styles.scenarioText}>
+                      {currentScenario.economicContext}
+                    </Text>
                   </View>
 
                   {/* Right: Action buttons (vertical stack) */}
@@ -300,7 +295,7 @@ export const ImproveScreen: React.FC = () => {
           {/* Back of card (Solution) - also swipeable */}
           <GestureDetector gesture={backSwipeGesture}>
             <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
-              <GlassPanel style={styles.cardContent} borderless variant="silver">
+              <GlassPanel style={styles.cardContent} variant="black">
               {/* Top section: Solution chart */}
               <View style={styles.chartSection}>
                 <CandlestickChart
@@ -334,19 +329,16 @@ export const ImproveScreen: React.FC = () => {
                 {/* Left: What happened analysis */}
                 <View style={styles.analysisContainer}>
                   <Text style={styles.analysisLabel}>WHAT HAPPENED</Text>
-                  <ScrollView
-                    style={styles.analysisScroll}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    <Text style={styles.analysisText}>
-                      {currentScenario.explanation}
-                    </Text>
-                    <View style={styles.answerSummary}>
-                      <Text style={styles.answerSummaryLabel}>Your answer:</Text>
+                  <Text style={styles.analysisText} numberOfLines={3}>
+                    {currentScenario.explanation}
+                  </Text>
+                  <View style={styles.answerSummary}>
+                    <View style={styles.answerRow}>
+                      <Text style={styles.answerSummaryLabel}>You:</Text>
                       <View style={styles.answerBadge}>
                         <Ionicons
                           name={selectedAnswer ? getAnswerIcon(selectedAnswer) : 'help'}
-                          size={16}
+                          size={14}
                           color={selectedAnswer ? getAnswerColor(selectedAnswer) : theme.colors.textSecondary}
                         />
                         <Text style={[
@@ -356,11 +348,13 @@ export const ImproveScreen: React.FC = () => {
                           {selectedAnswer?.toUpperCase() || '-'}
                         </Text>
                       </View>
+                    </View>
+                    <View style={styles.answerRow}>
                       <Text style={styles.answerSummaryLabel}>Correct:</Text>
                       <View style={styles.answerBadge}>
                         <Ionicons
                           name={getAnswerIcon(currentScenario.correctAnswer as Answer)}
-                          size={16}
+                          size={14}
                           color={getAnswerColor(currentScenario.correctAnswer as Answer)}
                         />
                         <Text style={[
@@ -371,7 +365,7 @@ export const ImproveScreen: React.FC = () => {
                         </Text>
                       </View>
                     </View>
-                  </ScrollView>
+                  </View>
                 </View>
 
                 {/* Right: Solution actions */}
@@ -511,7 +505,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: theme.spacing.lg,
-    paddingBottom: 120,
+    paddingBottom: theme.spacing.xl,
   },
   // Header
   header: {
@@ -582,22 +576,29 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 0,
     overflow: 'hidden',
+    flexDirection: 'column',
   },
-  // Chart section (70%)
+  // Chart section (2/3 of card)
   chartSection: {
-    flex: 70,
+    flex: 2,
+    minHeight: 0,
     position: 'relative',
   },
-  // Bottom section (30%) - split left/right
+  // Bottom section (1/3 of card) - split left/right
   bottomSection: {
-    flex: 30,
+    flex: 1,
+    minHeight: 0,
     flexDirection: 'row',
-    padding: theme.spacing.md,
-    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
   },
   // Scenario (left side)
   scenarioContainer: {
     flex: 1,
+    minHeight: 0,
+    justifyContent: 'flex-start',
   },
   scenarioLabel: {
     fontSize: theme.typography.sizes.xs,
@@ -606,19 +607,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: theme.spacing.xs,
   },
-  scenarioScroll: {
-    flex: 1,
-  },
   scenarioText: {
-    fontSize: theme.typography.sizes.sm,
-    lineHeight: theme.typography.sizes.sm * theme.typography.lineHeights.relaxed,
+    fontSize: 13,
+    lineHeight: 17,
     color: theme.colors.textSecondary,
+    flex: 1,
   },
   // Actions (right side)
   actionsContainer: {
-    width: 110,
+    width: 105,
     justifyContent: 'flex-start',
-    gap: theme.spacing.sm,
+    gap: theme.spacing.xs,
   },
   // Skip button
   skipButton: {
@@ -666,43 +665,47 @@ const styles = StyleSheet.create({
   // Analysis section (solution back)
   analysisContainer: {
     flex: 1,
+    minHeight: 0,
+    justifyContent: 'flex-start',
   },
   analysisLabel: {
     fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.textTertiary,
     letterSpacing: 1,
-    marginBottom: theme.spacing.xs,
-  },
-  analysisScroll: {
-    flex: 1,
+    marginBottom: 4,
   },
   analysisText: {
-    fontSize: theme.typography.sizes.sm,
-    lineHeight: theme.typography.sizes.sm * theme.typography.lineHeights.relaxed,
+    fontSize: 12,
+    lineHeight: 16,
     color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
   },
   answerSummary: {
+    gap: 4,
+    marginTop: 'auto',
+  },
+  answerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: theme.spacing.xs,
   },
   answerSummaryLabel: {
-    fontSize: theme.typography.sizes.xs,
+    fontSize: 11,
     color: theme.colors.textTertiary,
-    marginTop: theme.spacing.xs,
+    width: 50,
   },
   answerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
+    gap: 4,
+    paddingHorizontal: theme.spacing.xs,
+    paddingVertical: 2,
     backgroundColor: theme.colors.backgroundElevated,
     borderRadius: theme.borderRadius.sm,
-    alignSelf: 'flex-start',
   },
   answerBadgeText: {
-    fontSize: theme.typography.sizes.sm,
+    fontSize: 12,
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.textSecondary,
   },
@@ -735,9 +738,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    minHeight: 44,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    minHeight: 40,
   },
   glassButtonText: {
     fontSize: theme.typography.sizes.sm,

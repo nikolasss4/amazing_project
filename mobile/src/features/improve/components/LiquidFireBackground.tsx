@@ -56,12 +56,10 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
     // Intensity (brightness) - 0.6 to 1.2
     const intensity = useSharedValue(0.6);
 
-    // Flame/fog animation phases (multiple layers for organic turbulent effect)
-    const turbulence1 = useSharedValue(0);
-    const turbulence2 = useSharedValue(0);
-    const turbulence3 = useSharedValue(0);
-    const turbulence4 = useSharedValue(0);
-    const flicker = useSharedValue(0);
+    // Smooth gradient animation phases (no flicker)
+    const wave1 = useSharedValue(0);
+    const wave2 = useSharedValue(0);
+    const wave3 = useSharedValue(0);
 
     // Flash state (0 = none, 1 = green flash, -1 = red flash)
     const flashState = useSharedValue(0);
@@ -72,59 +70,36 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
     // Color mode (0 = green, 1 = red)
     const colorMode = useSharedValue(0);
 
-    // Start continuous turbulent animations (irregular, flame-like motion)
+    // Start continuous smooth animations (smooth gradient motion like screenshot)
     useEffect(() => {
-      // Primary turbulent motion (slow, large movements)
-      turbulence1.value = withRepeat(
+      // Primary smooth wave
+      wave1.value = withRepeat(
         withTiming(100, {
-          duration: 5000,
-          easing: Easing.bezier(0.4, 0.1, 0.6, 0.9),
+          duration: 8000,
+          easing: Easing.inOut(Easing.ease),
         }),
         -1,
         true
       );
 
-      // Secondary turbulent motion (medium speed, chaotic)
-      turbulence2.value = withRepeat(
+      // Secondary smooth wave
+      wave2.value = withRepeat(
         withTiming(100, {
-          duration: 3500,
-          easing: Easing.bezier(0.2, 0.8, 0.3, 0.9),
+          duration: 6000,
+          easing: Easing.inOut(Easing.ease),
         }),
         -1,
         true
       );
 
-      // Tertiary turbulent motion (faster, small distortions)
-      turbulence3.value = withRepeat(
+      // Tertiary smooth wave
+      wave3.value = withRepeat(
         withTiming(100, {
-          duration: 2200,
-          easing: Easing.bezier(0.6, 0.2, 0.8, 0.4),
+          duration: 10000,
+          easing: Easing.inOut(Easing.ease),
         }),
         -1,
         true
-      );
-
-      // Quaternary motion (very fast, flame tips)
-      turbulence4.value = withRepeat(
-        withTiming(100, {
-          duration: 1500,
-          easing: Easing.bezier(0.3, 0.7, 0.4, 0.8),
-        }),
-        -1,
-        true
-      );
-
-      // Flickering effect for flame-like intensity variation
-      flicker.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 200, easing: Easing.ease }),
-          withTiming(0.85, { duration: 150, easing: Easing.ease }),
-          withTiming(1, { duration: 180, easing: Easing.ease }),
-          withTiming(0.9, { duration: 220, easing: Easing.ease }),
-          withTiming(1, { duration: 160, easing: Easing.ease })
-        ),
-        -1,
-        false
       );
     }, []);
 
@@ -182,72 +157,43 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
       },
     }));
 
-    // Primary flame/fog layer with turbulent motion
+    // Primary gradient layer with smooth motion
     const animatedContainerStyle = useAnimatedStyle(() => {
       const currentHeight = height.value * SCREEN_HEIGHT;
 
-      // Create flame-like motion using multiple turbulent phases
-      const t1 = (turbulence1.value - 50) / 10;
-      const t2 = (turbulence2.value - 50) / 15;
-      const t3 = (turbulence3.value - 50) / 20;
-      const t4 = (turbulence4.value - 50) / 25;
-      
-      // Combine turbulences for organic, irregular motion
-      const turbulentHeight = t1 + (t2 * 0.7) + (t3 * 0.5) + (t4 * 0.3);
+      // Smooth subtle motion
+      const offset = ((wave1.value - 50) / 50) * 8;
 
       return {
-        height: currentHeight + turbulentHeight,
+        height: currentHeight + offset,
         bottom: 0,
-        opacity: intensity.value * flicker.value,
+        opacity: intensity.value,
       };
     });
 
-    // Secondary flame layer (offset for depth and irregular shape)
+    // Secondary gradient layer
     const animatedSecondaryStyle = useAnimatedStyle(() => {
-      const currentHeight = height.value * SCREEN_HEIGHT * 0.88;
+      const currentHeight = height.value * SCREEN_HEIGHT * 0.9;
 
-      const t2 = (turbulence2.value - 50) / 8;
-      const t3 = (turbulence3.value - 50) / 12;
-      const t4 = (turbulence4.value - 50) / 18;
-      
-      const turbulentHeight = t2 + (t3 * 0.6) + (t4 * 0.4);
+      const offset = ((wave2.value - 50) / 50) * 6;
 
       return {
-        height: currentHeight + turbulentHeight,
+        height: currentHeight + offset,
         bottom: 0,
-        opacity: intensity.value * 0.75 * flicker.value,
+        opacity: intensity.value * 0.8,
       };
     });
 
-    // Tertiary flame layer (background fog-like motion)
+    // Tertiary gradient layer
     const animatedTertiaryStyle = useAnimatedStyle(() => {
-      const currentHeight = height.value * SCREEN_HEIGHT * 0.75;
+      const currentHeight = height.value * SCREEN_HEIGHT * 0.8;
 
-      const t1 = (turbulence1.value - 50) / 6;
-      const t3 = (turbulence3.value - 50) / 10;
-      
-      const turbulentHeight = (t1 * 0.5) + (t3 * 0.8);
+      const offset = ((wave3.value - 50) / 50) * 5;
 
       return {
-        height: currentHeight + turbulentHeight,
+        height: currentHeight + offset,
         bottom: 0,
-        opacity: intensity.value * 0.5 * flicker.value,
-      };
-    });
-
-    // Wisp layer (flame tips, very active)
-    const animatedWispStyle = useAnimatedStyle(() => {
-      const currentHeight = height.value * SCREEN_HEIGHT * 0.95;
-
-      const t3 = (turbulence3.value - 50) / 5;
-      const t4 = (turbulence4.value - 50) / 3;
-      
-      const turbulentHeight = t3 + t4;
-
-      return {
-        height: currentHeight + turbulentHeight,
-        bottom: 0,
-        opacity: intensity.value * 0.6 * flicker.value,
+        opacity: intensity.value * 0.6,
       };
     });
 
@@ -279,77 +225,59 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
 
     return (
       <>
-        {/* Tertiary fog layer (furthest back, slow movement) */}
+        {/* Tertiary gradient layer (background) - smooth like screenshot */}
         <Animated.View style={[styles.gradientContainer, animatedTertiaryStyle]}>
           <LinearGradient
             colors={[
-              'transparent',
-              'transparent',
-              `${theme.colors.fireGreenDeep}40`,
-              theme.colors.fireGreenDeep,
+              'rgba(16, 185, 129, 0)',
+              'rgba(16, 185, 129, 0.15)',
+              'rgba(5, 150, 105, 0.25)',
+              'rgba(4, 120, 87, 0.35)',
             ]}
-            locations={[0, 0.4, 0.7, 1]}
+            locations={[0, 0.3, 0.6, 1]}
             style={StyleSheet.absoluteFill}
-            start={{ x: 0.3, y: 0 }}
-            end={{ x: 0.7, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
           />
         </Animated.View>
 
-        {/* Secondary flame layer (middle, more opaque) */}
+        {/* Secondary gradient layer - smooth blend */}
         <Animated.View style={[styles.gradientContainer, animatedSecondaryStyle]}>
           <LinearGradient
             colors={[
-              'transparent',
-              'transparent',
-              `${theme.colors.fireGreenDark}60`,
-              theme.colors.fireGreenDark,
-              theme.colors.fireGreenMid,
+              'rgba(5, 150, 105, 0)',
+              'rgba(5, 150, 105, 0.2)',
+              'rgba(16, 185, 129, 0.35)',
+              'rgba(16, 185, 129, 0.45)',
             ]}
-            locations={[0, 0.3, 0.6, 0.85, 1]}
+            locations={[0, 0.35, 0.7, 1]}
             style={StyleSheet.absoluteFill}
-            start={{ x: 0.2, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
           />
         </Animated.View>
 
-        {/* Wisp layer (flame tips and particles) */}
-        <Animated.View style={[styles.gradientContainer, animatedWispStyle]}>
-          <LinearGradient
-            colors={[
-              'transparent',
-              `${theme.colors.fireGreenMid}20`,
-              `${theme.colors.fireGreen}40`,
-            ]}
-            locations={[0, 0.5, 1]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0.4, y: 0 }}
-            end={{ x: 0.6, y: 1 }}
-          />
-        </Animated.View>
-
-        {/* Primary flame layer (foreground, brightest) */}
+        {/* Primary gradient layer (foreground) - brightest */}
         <Animated.View style={[styles.gradientContainer, animatedContainerStyle]}>
           <LinearGradient
             colors={[
-              'transparent',
-              'transparent',
-              `${theme.colors.fireGreenMid}50`,
-              `${theme.colors.fireGreen}90`,
-              theme.colors.fireGreen,
-              theme.colors.fireGreenMid,
+              'rgba(16, 185, 129, 0)',
+              'rgba(16, 185, 129, 0.25)',
+              'rgba(16, 185, 129, 0.5)',
+              'rgba(5, 150, 105, 0.6)',
             ]}
-            locations={[0, 0.2, 0.5, 0.75, 0.9, 1]}
+            locations={[0, 0.4, 0.75, 1]}
             style={StyleSheet.absoluteFill}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
           />
         </Animated.View>
 
-        {/* Dark gradient mask overlay (creates atmospheric depth) */}
+        {/* Dark gradient mask overlay for depth */}
         <Animated.View style={[styles.darkMask, darkMaskStyle]} pointerEvents="none">
           <LinearGradient
-            colors={['transparent', 'rgba(0, 0, 0, 0.5)', theme.colors.background]}
-            locations={[0, 0.6, 1]}
+            colors={['transparent', 'rgba(0, 0, 0, 0.4)', theme.colors.background]}
+            locations={[0, 0.5, 1]}
             style={StyleSheet.absoluteFill}
             start={{ x: 0.5, y: 1 }}
             end={{ x: 0.5, y: 0 }}
