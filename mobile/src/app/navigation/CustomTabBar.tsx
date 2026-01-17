@@ -6,10 +6,12 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { GlassPanel } from '@ui/primitives/GlassPanel';
 import { theme } from '@app/theme';
 import { useAssistantStore } from '@app/store';
 
@@ -28,7 +30,7 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
   }));
 
   React.useEffect(() => {
-    scale.value = withSpring(focused ? 1.1 : 1, { damping: 15, stiffness: 300 });
+    scale.value = withSpring(focused ? 1.05 : 1, { damping: 15, stiffness: 300 });
   }, [focused]);
 
   return (
@@ -36,16 +38,59 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
       <Ionicons
         name={name}
         size={24}
-        color={focused ? theme.colors.accent : theme.colors.textSecondary}
+        color={focused ? '#60A5FA' : 'rgba(255, 255, 255, 0.5)'}
       />
     </Animated.View>
   );
 };
 
+interface TabButtonProps {
+  iconName: keyof typeof Ionicons.glyphMap;
+  focused: boolean;
+  onPress: () => void;
+}
+
+const TabButton: React.FC<TabButtonProps> = ({ iconName, focused, onPress }) => {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withTiming(0.96, { duration: 120 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+  };
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[styles.tab, animatedStyle]}
+    >
+      {/* Glass button background */}
+      <BlurView intensity={focused ? 15 : 10} tint="dark" style={StyleSheet.absoluteFill} />
+      <LinearGradient
+        colors={
+          focused
+            ? ['rgba(96, 165, 250, 0.12)', 'rgba(59, 130, 246, 0.08)']
+            : ['rgba(255, 255, 255, 0.06)', 'rgba(255, 255, 255, 0.04)']
+        }
+        style={StyleSheet.absoluteFill}
+      />
+      
+      <TabIcon name={iconName} focused={focused} />
+    </AnimatedPressable>
+  );
+};
+
 /**
- * CustomTabBar - Telegram-like navigation with pill bubbles
- * Left pill: Trade, Community, Learn tabs
- * Right pill: AI Assistant button
+ * CustomTabBar - Telegram-style liquid glass navigation
+ * Premium dark UI with frosted glass, subtle gradients, and soft glows
  */
 export const CustomTabBar: React.FC<BottomTabBarProps> = ({
   state,
@@ -82,33 +127,62 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom || theme.spacing.md }]}>
       {/* Left pill - Main navigation tabs */}
-      <GlassPanel style={styles.leftPill}>
+      <View style={styles.leftPillWrapper}>
+        {/* Frosted glass background */}
+        <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+        
+        {/* Gradient tint inside glass (deep navy → charcoal) */}
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.12)', 'rgba(30, 41, 59, 0.10)', 'rgba(15, 23, 42, 0.12)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        
+        {/* Inner highlight at top edge */}
+        <LinearGradient
+          colors={['rgba(255, 255, 255, 0.08)', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 0.3 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        
         <View style={styles.tabsContainer}>
           {state.routes.map((route, index) => {
             const isFocused = state.index === index;
             const iconName = iconMap[route.name] || 'ellipse';
 
             return (
-              <AnimatedPressable
+              <TabButton
                 key={route.key}
+                iconName={iconName}
+                focused={isFocused}
                 onPress={() => handleTabPress(route, index)}
-                style={styles.tab}
-              >
-                <TabIcon name={iconName} focused={isFocused} />
-              </AnimatedPressable>
+              />
             );
           })}
         </View>
-      </GlassPanel>
+      </View>
 
-      {/* Right pill - AI Assistant */}
-      <GlassPanel style={styles.rightPill}>
-        <AnimatedPressable onPress={handleAssistantPress} style={styles.assistantButton}>
-          <View style={styles.aiIconContainer}>
-            <Ionicons name="sparkles" size={24} color={theme.colors.accent} />
-          </View>
+      {/* Right circle - AI Assistant */}
+      <View style={styles.assistantCircleWrapper}>
+        <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+        <LinearGradient
+          colors={['rgba(15, 23, 42, 0.12)', 'rgba(30, 41, 59, 0.10)']}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={['rgba(255, 255, 255, 0.08)', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <AnimatedPressable onPress={handleAssistantPress} style={styles.assistantCircle}>
+          <Ionicons name="sparkles" size={24} color="#60A5FA" />
         </AnimatedPressable>
-      </GlassPanel>
+      </View>
     </View>
   );
 };
@@ -121,41 +195,43 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
   },
-  leftPill: {
-    paddingHorizontal: theme.spacing.sm,
+  leftPillWrapper: {
+    borderRadius: 32,
+    overflow: 'hidden',
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
+    backgroundColor: 'rgba(15, 23, 42, 0.1)',
   },
   tabsContainer: {
     flexDirection: 'row',
-    gap: theme.spacing.xs,
+    gap: theme.spacing.lg,
   },
   tab: {
+    width: 52,
+    height: 52,
+    borderRadius: 26, // Half of width/height for perfect circle
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  assistantCircleWrapper: {
     width: 56,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: theme.borderRadius.md,
+    height: 56,
+    borderRadius: 28, // Half of width/height for perfect circle
+    overflow: 'hidden',
+    backgroundColor: 'rgba(15, 23, 42, 0.1)',
   },
-  rightPill: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.sm,
-  },
-  assistantButton: {
+  assistantCircle: {
     width: 56,
-    height: 48,
+    height: 56,
+    borderRadius: 28, // Half of width/height for perfect circle
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: theme.borderRadius.md,
-  },
-  aiIconContainer: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.accentMuted,
+    backgroundColor: 'rgba(96, 165, 250, 0.1)',
   },
 });

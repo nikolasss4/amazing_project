@@ -145,6 +145,8 @@ export const CommunityScreen: React.FC = () => {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          scrollEnabled={activeSection !== 'leaderboard'}
+          nestedScrollEnabled={activeSection === 'leaderboard'}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -798,7 +800,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 600, // Increased height to fill more space
+    height: 500, // Height to show header, filters, and top 5 rows
     position: 'relative',
   },
   flipCard: {
@@ -835,7 +837,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.semibold,
   },
   tableScrollView: {
-    maxHeight: 450, // Increased to match new container height
+    maxHeight: 380, // Height to show exactly 5 rows initially (table header + 5 rows + gaps)
   },
   tableScrollContent: {
     paddingBottom: theme.spacing.xs,
