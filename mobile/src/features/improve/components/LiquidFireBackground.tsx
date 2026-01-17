@@ -43,9 +43,9 @@ const getHeightForStreak = (streak: number): number => {
 
 // Streak to intensity (brightness) mapping
 const getIntensityForStreak = (streak: number): number => {
-  if (streak >= 5) return 1.2; // Extra bright for crazy streak
-  const intensity = 0.6 + (streak * 0.12); // 0.6 to 1.08
-  return Math.min(intensity, 1);
+  if (streak >= 5) return 1.5; // Extra bright for crazy streak - covers whole screen
+  const intensity = 0.6 + (streak * 0.15); // 0.6 to 1.2
+  return Math.min(intensity, 1.2);
 };
 
 export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFireBackgroundProps>(
@@ -225,14 +225,31 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
 
     return (
       <>
-        {/* Tertiary gradient layer (background) - smooth like screenshot */}
+        {/* Base dark gradient - green theme */}
+        <View style={StyleSheet.absoluteFill}>
+          <LinearGradient
+            colors={[
+              '#000A05', // Deep near-black with green hint
+              '#001A0F', // Dark charcoal with green hint
+              '#05201A', // Dark green-black
+              '#001A0F', // Back to charcoal
+              '#000F08', // Deep navy-green blend
+            ]}
+            locations={[0, 0.3, 0.5, 0.7, 1]}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+
+        {/* Tertiary gradient layer (background) - green tones */}
         <Animated.View style={[styles.gradientContainer, animatedTertiaryStyle]}>
           <LinearGradient
             colors={[
-              'rgba(16, 185, 129, 0)',
-              'rgba(16, 185, 129, 0.15)',
-              'rgba(5, 150, 105, 0.25)',
-              'rgba(4, 120, 87, 0.35)',
+              'rgba(0, 200, 83, 0)',
+              'rgba(0, 200, 83, 0.12)',
+              'rgba(0, 230, 118, 0.20)',
+              'rgba(46, 125, 50, 0.28)',
             ]}
             locations={[0, 0.3, 0.6, 1]}
             style={StyleSheet.absoluteFill}
@@ -241,14 +258,14 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
           />
         </Animated.View>
 
-        {/* Secondary gradient layer - smooth blend */}
+        {/* Secondary gradient layer - smooth green blend */}
         <Animated.View style={[styles.gradientContainer, animatedSecondaryStyle]}>
           <LinearGradient
             colors={[
-              'rgba(5, 150, 105, 0)',
-              'rgba(5, 150, 105, 0.2)',
-              'rgba(16, 185, 129, 0.35)',
-              'rgba(16, 185, 129, 0.45)',
+              'rgba(0, 230, 118, 0)',
+              'rgba(0, 230, 118, 0.15)',
+              'rgba(0, 200, 83, 0.28)',
+              'rgba(0, 200, 83, 0.38)',
             ]}
             locations={[0, 0.35, 0.7, 1]}
             style={StyleSheet.absoluteFill}
@@ -257,14 +274,14 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
           />
         </Animated.View>
 
-        {/* Primary gradient layer (foreground) - brightest */}
+        {/* Primary gradient layer (foreground) - brightest green */}
         <Animated.View style={[styles.gradientContainer, animatedContainerStyle]}>
           <LinearGradient
             colors={[
-              'rgba(16, 185, 129, 0)',
-              'rgba(16, 185, 129, 0.25)',
-              'rgba(16, 185, 129, 0.5)',
-              'rgba(5, 150, 105, 0.6)',
+              'rgba(0, 200, 83, 0)',
+              'rgba(0, 200, 83, 0.20)',
+              'rgba(0, 230, 118, 0.40)',
+              'rgba(105, 240, 174, 0.50)',
             ]}
             locations={[0, 0.4, 0.75, 1]}
             style={StyleSheet.absoluteFill}
@@ -273,10 +290,27 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
           />
         </Animated.View>
 
+        {/* Flowing green gradient layer */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <LinearGradient
+            colors={[
+              'rgba(0, 200, 83, 0.08)',
+              'rgba(0, 230, 118, 0.04)',
+              'transparent',
+              'rgba(105, 240, 174, 0.06)',
+              'rgba(0, 200, 83, 0.05)',
+            ]}
+            locations={[0, 0.25, 0.5, 0.75, 1]}
+            start={{ x: 0.3, y: 0.2 }}
+            end={{ x: 0.7, y: 0.8 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+
         {/* Dark gradient mask overlay for depth */}
         <Animated.View style={[styles.darkMask, darkMaskStyle]} pointerEvents="none">
           <LinearGradient
-            colors={['transparent', 'rgba(0, 0, 0, 0.4)', theme.colors.background]}
+            colors={['transparent', 'rgba(0, 0, 0, 0.3)', '#000000']}
             locations={[0, 0.5, 1]}
             style={StyleSheet.absoluteFill}
             start={{ x: 0.5, y: 1 }}
@@ -290,7 +324,7 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
         {/* Top fade to black for smooth blending */}
         <View style={styles.topFade} pointerEvents="none">
           <LinearGradient
-            colors={[theme.colors.background, 'transparent']}
+            colors={['#000000', 'transparent']}
             style={StyleSheet.absoluteFill}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
