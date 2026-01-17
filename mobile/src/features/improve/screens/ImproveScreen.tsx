@@ -252,7 +252,7 @@ export const ImproveScreen: React.FC = () => {
                 {/* Front of card with gradient border */}
                 <Animated.View style={[styles.cardWrapper, frontAnimatedStyle, swipeAnimatedStyle]}>
                   {/* Gradient Border that flips with the card */}
-                  <View style={styles.gradientBorderContainer}>
+                  <View style={styles.gradientBorderContainer} pointerEvents="none">
                     <StaticGradientBorder colorState={borderColorState} />
                     <View style={styles.gradientBorderInner} />
                   </View>
@@ -307,7 +307,7 @@ export const ImproveScreen: React.FC = () => {
             {/* Back of card (Solution) with gradient border - also swipeable */}
             <Animated.View style={[styles.cardWrapper, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
               {/* Gradient Border that flips with the card */}
-              <View style={styles.gradientBorderContainer}>
+              <View style={styles.gradientBorderContainer} pointerEvents="none">
                 <StaticGradientBorder colorState={borderColorState} />
                 <View style={styles.gradientBorderInner} />
               </View>
@@ -527,42 +527,46 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
   };
 
   return (
-    <AnimatedPressable
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      onPress={handlePress}
-      disabled={disabled}
-      style={[
-        styles.upDownButton,
-        { borderColor: `${buttonColor}40` },
-        selected && { borderColor: buttonColor, backgroundColor: `${buttonColor}25` },
-        disabled && styles.upDownButtonDisabled,
-        animatedStyle,
-      ]}
-    >
-      <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
-      {/* Colored glow overlay */}
-      <View 
+    <Animated.View style={animatedStyle} collapsable={false}>
+      <Pressable
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={handlePress}
+        disabled={disabled}
         style={[
-          styles.buttonGlowOverlay, 
-          { backgroundColor: `${buttonColor}15` }
-        ]} 
-        pointerEvents="none" 
-      />
-      <View style={styles.upDownButtonContent} pointerEvents="none">
-        <Ionicons
-          name={icon as keyof typeof Ionicons.glyphMap}
-          size={20}
-          color={selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor)}
+          styles.upDownButton,
+          { borderColor: `${buttonColor}40` },
+          selected && { borderColor: buttonColor, backgroundColor: `${buttonColor}25` },
+          disabled && styles.upDownButtonDisabled,
+        ]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        android_ripple={null}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+      >
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {/* Colored glow overlay */}
+        <View 
+          style={[
+            styles.buttonGlowOverlay, 
+            { backgroundColor: `${buttonColor}15` }
+          ]} 
+          pointerEvents="none" 
         />
-        <Text style={[
-          styles.upDownButtonText,
-          { color: selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor) },
-        ]}>
-          {label}
-        </Text>
-      </View>
-    </AnimatedPressable>
+        <View style={styles.upDownButtonContent} pointerEvents="none">
+          <Ionicons
+            name={icon as keyof typeof Ionicons.glyphMap}
+            size={20}
+            color={selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor)}
+          />
+          <Text style={[
+            styles.upDownButtonText,
+            { color: selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor) },
+          ]}>
+            {label}
+          </Text>
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 };
 
@@ -791,6 +795,8 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.xl,
     gap: theme.spacing.md,
+    zIndex: 50,
+    elevation: 50,
   },
   // Scenario (left side)
   scenarioContainer: {
@@ -817,7 +823,8 @@ const styles = StyleSheet.create({
     width: 110,
     justifyContent: 'flex-start',
     gap: theme.spacing.sm,
-    zIndex: 10, // Ensure buttons are above other elements
+    zIndex: 100, // Ensure buttons are above other elements
+    elevation: 100, // Android elevation
   },
   // Up/Down Button styles
   upDownButton: {
@@ -825,6 +832,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1.5,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    zIndex: 101,
+    elevation: 101,
   },
   upDownButtonDisabled: {
     opacity: 0.4,
