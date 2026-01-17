@@ -83,7 +83,6 @@ lerna-debug.log*
 .expo-shared/
 dist/
 web-build/
-expo-env.d.ts
 
 # Metro
 .metro-health-check*

@@ -1,34 +1,36 @@
 import { create } from 'zustand';
 
 // Trade Store
-export interface TradePair {
-  symbol: string;
-  displayName: string;
-  currentPrice: number;
-  change24h: number;
-}
+import { TradePair, TradeTheme } from '../../features/trade/models';
 
 interface TradeState {
+  selectedTheme: TradeTheme | null;
   selectedPair: TradePair | null;
+  tradeType: 'theme' | 'pair' | 'single';
   orderType: 'market' | 'limit';
   amount: string;
-  setSelectedPair: (pair: TradePair) => void;
+  side: 'long' | 'short';
+  setSelectedTheme: (theme: TradeTheme | null) => void;
+  setSelectedPair: (pair: TradePair | null) => void;
+  setTradeType: (type: 'theme' | 'pair' | 'single') => void;
   setOrderType: (type: 'market' | 'limit') => void;
   setAmount: (amount: string) => void;
+  setSide: (side: 'long' | 'short') => void;
 }
 
 export const useTradeStore = create<TradeState>((set) => ({
-  selectedPair: {
-    symbol: 'BTCUSD',
-    displayName: 'BTC/USD',
-    currentPrice: 67500,
-    change24h: 2.5,
-  },
+  selectedTheme: null,
+  selectedPair: null,
+  tradeType: 'theme',
   orderType: 'market',
   amount: '',
+  side: 'long',
+  setSelectedTheme: (theme) => set({ selectedTheme: theme }),
   setSelectedPair: (pair) => set({ selectedPair: pair }),
+  setTradeType: (type) => set({ tradeType: type }),
   setOrderType: (type) => set({ orderType: type }),
   setAmount: (amount) => set({ amount }),
+  setSide: (side) => set({ side }),
 }));
 
 // Learn Store
