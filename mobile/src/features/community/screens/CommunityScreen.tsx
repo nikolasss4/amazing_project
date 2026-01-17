@@ -26,12 +26,14 @@ import {
 } from '../models';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
+type CommunitySection = 'leaderboard' | 'global';
 
 export const CommunityScreen: React.FC = () => {
   const { streak, totalXP } = useLearnStore();
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
   const [isFlipped, setIsFlipped] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [activeSection, setActiveSection] = useState<CommunitySection>('leaderboard');
   const flipRotation = useSharedValue(0);
   
   // Mock username - in real app, get from user store
@@ -165,7 +167,44 @@ export const CommunityScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* Section Navigation */}
+        <View style={styles.sectionNav}>
+          <Pressable
+            onPress={() => setActiveSection('leaderboard')}
+            style={[
+              styles.sectionNavButton,
+              activeSection === 'leaderboard' && styles.sectionNavButtonActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sectionNavText,
+                activeSection === 'leaderboard' && styles.sectionNavTextActive,
+              ]}
+            >
+              Leaderboard
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveSection('global')}
+            style={[
+              styles.sectionNavButton,
+              activeSection === 'global' && styles.sectionNavButtonActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sectionNavText,
+                activeSection === 'global' && styles.sectionNavTextActive,
+              ]}
+            >
+              Global
+            </Text>
+          </Pressable>
+        </View>
+
         {/* Leaderboard - Full Section Flip */}
+        {activeSection === 'leaderboard' && (
         <View style={styles.flipContainer}>
           {/* Front Side - All Users */}
           <Animated.View style={[styles.flipCard, styles.flipCardFront, frontAnimatedStyle]}>
@@ -357,8 +396,12 @@ export const CommunityScreen: React.FC = () => {
             </GlowingBorder>
           </Animated.View>
         </View>
+        )}
 
-        {/* Celebrity Portfolios */}
+        {/* Global - Market Narratives & Social Feed */}
+        {activeSection === 'global' && (
+        <>
+        {/* Market Narratives */}
         <GlowingBorder
           style={styles.sectionContainer}
           glowColor="rgba(255, 255, 255, 0.2)"
@@ -371,52 +414,67 @@ export const CommunityScreen: React.FC = () => {
           borderWidth={0.15}
         >
           <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Celebrity Portfolios</Text>
-          <Text style={styles.disclaimer}>
-            Mock data from public sources
-          </Text>
+            <Text style={styles.sectionTitle}>Market Narratives</Text>
+            
+            {/* Main Narrative Signal Card */}
+            <View style={styles.narrativeCard}>
+              <View style={styles.narrativeHeader}>
+                <Text style={styles.narrativeTrending}>🔥 AI is trending on X</Text>
+              </View>
+              
+              <View style={styles.narrativeMetrics}>
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>Mentions:</Text>
+                  <Text style={styles.metricValue}>▲ +280% <Text style={styles.metricPeriod}>(24h)</Text></Text>
+                </View>
+                
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>Trigger:</Text>
+                  <Text style={styles.metricDescription}>Public comments by Elon Musk</Text>
+                </View>
+                
+                <View style={styles.metricRow}>
+                  <Text style={styles.metricLabel}>Market reaction:</Text>
+                  <Text style={styles.metricMarket}>AI basket +2.4%</Text>
+                </View>
+              </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.carousel}
-            contentContainerStyle={styles.carouselContent}
-          >
-            {mockCelebrityPortfolios.map((portfolio) => (
-              <GlassPanel key={portfolio.id} intensity={30} tint="dark" style={styles.portfolioCard}>
-                <View style={styles.portfolioHeader}>
-                  <View style={styles.celebrityAvatar}>
-                    <Text style={styles.celebrityAvatarText}>
-                      {portfolio.name.substring(0, 2)}
-                    </Text>
+              {/* Timeline */}
+              <View style={styles.narrativeTimeline}>
+                <Text style={styles.timelineTitle}>Timeline</Text>
+                <View style={styles.timelineEvents}>
+                  <View style={styles.timelineEvent}>
+                    <Text style={styles.timelineTime}>09:12</Text>
+                    <Text style={styles.timelineDescription}>AI mentions spike</Text>
                   </View>
-                  <View style={styles.portfolioInfo}>
-                    <Text style={styles.celebrityName}>{portfolio.name}</Text>
-                    <Text style={styles.strategyLabel}>{portfolio.strategyLabel}</Text>
+                  <View style={styles.timelineEvent}>
+                    <Text style={styles.timelineTime}>10:40</Text>
+                    <Text style={styles.timelineDescription}>Public figure comment</Text>
+                  </View>
+                  <View style={styles.timelineEvent}>
+                    <Text style={styles.timelineTime}>11:15</Text>
+                    <Text style={styles.timelineDescription}>Market reaction</Text>
                   </View>
                 </View>
+              </View>
 
-                <View style={styles.holdingsRow}>
-                  {portfolio.topHoldings.map((holding) => (
-                    <Pill key={holding}>{holding}</Pill>
-                  ))}
-                </View>
-
-                <View style={styles.portfolioReturn}>
-                  <Text style={[styles.portfolioReturn, { color: portfolio.returnPercent >= 0 ? theme.colors.bullish : theme.colors.bearish }]}>
-                    {portfolio.returnPercent >= 0 ? '+' : ''}{portfolio.returnPercent}%
-                  </Text>
-                </View>
-              </GlassPanel>
-            ))}
-          </ScrollView>
+              {/* CTAs */}
+              <View style={styles.narrativeCTAs}>
+                <Pressable style={styles.followButton}>
+                  <Text style={styles.followButtonText}>Follow narrative</Text>
+                </Pressable>
+                <Pressable style={styles.fadeButton}>
+                  <Text style={styles.fadeButtonText}>Fade narrative</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
         </GlowingBorder>
 
         {/* Social Feed */}
         <GlowingBorder
           style={styles.sectionContainer}
-          glowColor="rgba(255, 255, 255, 0.2)"
+            glowColor="rgba(255, 255, 255, 0.2)"
           disabled={false}
           glow={false}
           spread={8}
@@ -472,9 +530,11 @@ export const CommunityScreen: React.FC = () => {
                 </View>
               </View>
             </View>
-          ))}
+            ))}
           </View>
         </GlowingBorder>
+        </>
+        )}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -506,7 +566,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.xl,
+    marginBottom: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
   },
   greetingText: {
@@ -531,6 +591,35 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
     color: '#FFFFFF',
+  },
+  sectionNav: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.md,
+  },
+  sectionNavButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+  },
+  sectionNavButtonActive: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
+  },
+  sectionNavText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  sectionNavTextActive: {
+    color: '#FF6B35',
+    fontWeight: theme.typography.weights.semibold,
   },
   title: {
     fontSize: theme.typography.sizes.xxl,
@@ -694,7 +783,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 380, // Fixed height to match friends leaderboard size
+    height: 600, // Increased height to fill more space
     position: 'relative',
   },
   flipCard: {
@@ -731,7 +820,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.semibold,
   },
   tableScrollView: {
-    maxHeight: 240, // Reduced to fit within fixed container height
+    maxHeight: 450, // Increased to match new container height
   },
   tableScrollContent: {
     paddingBottom: theme.spacing.xs,
@@ -813,6 +902,127 @@ const styles = StyleSheet.create({
   },
   winRateText: {
     fontSize: theme.typography.sizes.md,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  // Market Narratives Styles
+  narrativeCard: {
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.lg,
+    backgroundColor: 'rgba(8, 8, 12, 0.6)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  narrativeHeader: {
+    marginBottom: theme.spacing.md,
+  },
+  narrativeTrending: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    lineHeight: theme.typography.sizes.lg * 1.3,
+  },
+  narrativeMetrics: {
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.sm,
+  },
+  metricLabel: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.5)',
+    minWidth: 110,
+  },
+  metricValue: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.bullish,
+    flex: 1,
+  },
+  metricPeriod: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.regular,
+    color: 'rgba(255, 255, 255, 0.4)',
+  },
+  metricDescription: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    color: 'rgba(255, 255, 255, 0.9)',
+    flex: 1,
+  },
+  metricMarket: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.bullish,
+    flex: 1,
+  },
+  narrativeTimeline: {
+    marginBottom: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  timelineTitle: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.4)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: theme.spacing.sm,
+  },
+  timelineEvents: {
+    gap: theme.spacing.xs,
+  },
+  timelineEvent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  timelineTime: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    color: 'rgba(255, 255, 255, 0.5)',
+    minWidth: 50,
+  },
+  timelineDescription: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+    flex: 1,
+  },
+  narrativeCTAs: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  followButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: '#FF6B35',
+    borderRadius: theme.borderRadius.md,
+    alignItems: 'center',
+  },
+  followButtonText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  fadeButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+  },
+  fadeButtonText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
     color: 'rgba(255, 255, 255, 0.7)',
   },
   carousel: {
