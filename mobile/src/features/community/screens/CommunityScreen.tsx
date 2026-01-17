@@ -24,6 +24,7 @@ import {
   CelebrityPortfolio,
   SocialPost,
 } from '../models';
+import { QRCodeModal } from '../components/QRCodeModal';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
@@ -34,6 +35,7 @@ export const CommunityScreen: React.FC = () => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [activeSection, setActiveSection] = useState<CommunitySection>('leaderboard');
+  const [showQRModal, setShowQRModal] = useState(false);
   const flipRotation = useSharedValue(0);
   
   // Mock username - in real app, get from user store
@@ -147,9 +149,15 @@ export const CommunityScreen: React.FC = () => {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Community</Text>
-            <View style={styles.filterButton}>
-              <Ionicons name="filter" size={24} color={theme.colors.textSecondary} />
-            </View>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowQRModal(true);
+              }}
+              style={styles.qrButton}
+            >
+              <Ionicons name="qr-code-outline" size={24} color={theme.colors.textSecondary} />
+            </Pressable>
           </View>
 
         {/* Greeting Section */}
@@ -537,6 +545,13 @@ export const CommunityScreen: React.FC = () => {
         )}
         </ScrollView>
       </SafeAreaView>
+      
+      {/* QR Code Modal */}
+      <QRCodeModal
+        visible={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        username={username}
+      />
     </View>
   );
 };
@@ -626,7 +641,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: '#FFFFFF',
   },
-  filterButton: {
+  qrButton: {
     padding: theme.spacing.xs,
   },
   sectionContainer: {
