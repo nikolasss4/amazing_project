@@ -39,6 +39,18 @@ export const colors = {
   // Overlays
   overlay: 'rgba(0, 0, 0, 0.5)',
   overlayStrong: 'rgba(0, 0, 0, 0.8)',
+
+  // Fire/streak gradients - Green
+  fireGreen: '#10B981',
+  fireGreenMid: '#059669',
+  fireGreenDark: '#047857',
+  fireGreenDeep: '#064E3B',
+
+  // Fire/streak gradients - Red (incorrect)
+  fireRed: '#EF4444',
+  fireRedMid: '#DC2626',
+  fireRedDark: '#B91C1C',
+  fireRedDeep: '#7F1D1D',
 } as const;
 
 export const spacing = {

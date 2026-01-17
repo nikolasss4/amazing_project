@@ -3,13 +3,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { TradeScreen } from '@features/trade/screens/TradeScreen';
 import { CommunityScreen } from '@features/community/screens/CommunityScreen';
-import { LearnScreen } from '@features/learn/screens/LearnScreen';
+import { ImproveScreen } from '@features/improve/screens/ImproveScreen';
 import { CustomTabBar } from './CustomTabBar';
 
 export type RootTabParamList = {
   Trade: undefined;
   Community: undefined;
-  Learn: undefined;
+  Improve: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -25,7 +25,7 @@ export const RootNavigator: React.FC = () => {
       >
         <Tab.Screen name="Trade" component={TradeScreen} />
         <Tab.Screen name="Community" component={CommunityScreen} />
-        <Tab.Screen name="Learn" component={LearnScreen} />
+        <Tab.Screen name="Improve" component={ImproveScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   );

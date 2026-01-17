@@ -36,8 +36,8 @@ export interface Scenario {
   id: string;
   prompt: string;
   chartImage?: string;
-  options: Array<'up' | 'down' | 'flat'>;
-  correctAnswer: 'up' | 'down' | 'flat';
+  options: Array<'up' | 'down'>;
+  correctAnswer: 'up' | 'down';
   explanation: string;
   xpReward: number;
 }
@@ -61,6 +61,34 @@ export const useLearnStore = create<LearnState>((set) => ({
   addXP: (xp) => set((state) => ({ totalXP: state.totalXP + xp })),
   incrementStreak: () =>
     set((state) => ({ streak: state.streak + 1, answeredToday: state.answeredToday + 1 })),
+}));
+
+// Improve Store
+interface ImproveState {
+  currentScenario: Scenario | null;
+  totalXP: number;
+  streak: number;
+  answeredToday: number;
+  correctAnswers: number;
+  setCurrentScenario: (scenario: Scenario | null) => void;
+  addXP: (xp: number) => void;
+  incrementStreak: () => void;
+  incrementCorrect: () => void;
+  resetStreak: () => void;
+}
+
+export const useImproveStore = create<ImproveState>((set) => ({
+  currentScenario: null,
+  totalXP: 0,
+  streak: 0,
+  answeredToday: 0,
+  correctAnswers: 0,
+  setCurrentScenario: (scenario) => set({ currentScenario: scenario }),
+  addXP: (xp) => set((state) => ({ totalXP: state.totalXP + xp })),
+  incrementStreak: () =>
+    set((state) => ({ streak: state.streak + 1, answeredToday: state.answeredToday + 1 })),
+  incrementCorrect: () => set((state) => ({ correctAnswers: state.correctAnswers + 1 })),
+  resetStreak: () => set({ streak: 0 }),
 }));
 
 // AI Assistant Store
