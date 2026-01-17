@@ -1,0 +1,86 @@
+# Gamified Trading Backend - Docker Compose
+# Minimal setup for local development
+
+version: '3.8'
+
+services:
+  # =========================================================================
+  # Backend API
+  # =========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: trading-api
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Application
+      - APP_NAME=${APP_NAME:-gamified-trading-api}
+      - APP_ENV=${APP_ENV:-development}
+      - DEBUG=${DEBUG:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - HOST=0.0.0.0
+      - PORT=8000
+
+      # Supabase
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+
+      # Hyperliquid
+      - HYPERLIQUID_API_URL=${HYPERLIQUID_API_URL:-https://api.hyperliquid.xyz}
+      - HYPERLIQUID_PRIVATE_KEY=${HYPERLIQUID_PRIVATE_KEY}
+      - HYPERLIQUID_WALLET_ADDRESS=${HYPERLIQUID_WALLET_ADDRESS}
+
+      # Pear Protocol
+      - PEAR_API_URL=${PEAR_API_URL:-https://api.pear.garden}
+      - PEAR_API_KEY=${PEAR_API_KEY}
+
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo-preview}
+
+      # ElevenLabs
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    restart: unless-stopped
+
+    # For development: mount source code
+    volumes:
+      - ./app:/app/app:ro
+
+    # Network
+    networks:
+      - trading-network
+
+networks:
+  trading-network:
+    driver: bridge
+
+# =========================================================================
+# Usage
+# =========================================================================
+#
+# Build and run:
+#   docker-compose up -d --build
+#
+# View logs:
+#   docker-compose logs -f api
+#
+# Stop:
+#   docker-compose down
+#
+# With specific env file:
+#   docker-compose --env-file .env.production up -d
+#
