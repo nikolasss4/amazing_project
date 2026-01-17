@@ -249,14 +249,13 @@ export const ImproveScreen: React.FC = () => {
             {/* Scenario Card - only show when loaded and has scenarios */}
             {!isLoading && scenarios.length > 0 && currentScenario && (
               <>
-                {/* Static Gradient Border */}
-                <View style={styles.gradientBorderContainer}>
-                  <StaticGradientBorder colorState={borderColorState} />
-                  <View style={styles.gradientBorderInner} />
-                </View>
-                
-                {/* Front of card */}
-                <Animated.View style={[styles.card, frontAnimatedStyle, swipeAnimatedStyle]}>
+                {/* Front of card with gradient border */}
+                <Animated.View style={[styles.cardWrapper, frontAnimatedStyle, swipeAnimatedStyle]}>
+                  {/* Gradient Border that flips with the card */}
+                  <View style={styles.gradientBorderContainer}>
+                    <StaticGradientBorder colorState={borderColorState} />
+                    <View style={styles.gradientBorderInner} />
+                  </View>
                   <View style={styles.cardContent}>
                     {/* Top section: Chart - swipeable area */}
                     <GestureDetector gesture={swipeGesture}>
@@ -305,8 +304,13 @@ export const ImproveScreen: React.FC = () => {
                 </View>
               </Animated.View>
 
-            {/* Back of card (Solution) - also swipeable */}
-            <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
+            {/* Back of card (Solution) with gradient border - also swipeable */}
+            <Animated.View style={[styles.cardWrapper, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
+              {/* Gradient Border that flips with the card */}
+              <View style={styles.gradientBorderContainer}>
+                <StaticGradientBorder colorState={borderColorState} />
+                <View style={styles.gradientBorderInner} />
+              </View>
               <View style={styles.cardContent}>
                 {/* Top section: Solution chart with outcome */}
                 <GestureDetector gesture={backSwipeGesture}>
@@ -720,13 +724,19 @@ const styles = StyleSheet.create({
     width: '100%',
     position: 'relative',
   },
-  // Gradient border styles - static border like screenshot
-  gradientBorderContainer: {
+  // Card wrapper - holds both the gradient border and content, flips together
+  cardWrapper: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    borderRadius: theme.borderRadius.xl,
+    overflow: 'hidden',
+  },
+  // Gradient border styles - static border like screenshot
+  gradientBorderContainer: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: theme.borderRadius.xl,
     padding: 2,
     overflow: 'hidden',
@@ -745,24 +755,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 10, 14, 0.98)',
     borderRadius: theme.borderRadius.xl - 2,
   },
-  card: {
+  cardBack: {
+    backfaceVisibility: 'hidden',
+  },
+  cardContent: {
     position: 'absolute',
     top: 2,
     left: 2,
     right: 2,
     bottom: 2,
-    borderRadius: theme.borderRadius.xl - 2,
-    overflow: 'hidden',
-  },
-  cardBack: {
-    backfaceVisibility: 'hidden',
-  },
-  cardContent: {
-    flex: 1,
     padding: 0,
     overflow: 'hidden',
     flexDirection: 'column',
-    position: 'relative',
     backgroundColor: 'rgba(10, 10, 14, 0.98)',
     borderRadius: theme.borderRadius.xl - 2,
   },
