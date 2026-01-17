@@ -6,31 +6,40 @@ import { TradePair, TradeTheme } from '../../features/trade/models';
 interface TradeState {
   selectedTheme: TradeTheme | null;
   selectedPair: TradePair | null;
-  tradeType: 'theme' | 'pair' | 'single';
+  tradeType: 'theme' | 'pair' | 'single' | 'basket';
   orderType: 'market' | 'limit';
   amount: string;
   side: 'long' | 'short';
+  // For pair trading - user selected assets
+  selectedLongAsset: string | null;
+  selectedShortAsset: string | null;
   setSelectedTheme: (theme: TradeTheme | null) => void;
   setSelectedPair: (pair: TradePair | null) => void;
-  setTradeType: (type: 'theme' | 'pair' | 'single') => void;
+  setTradeType: (type: 'theme' | 'pair' | 'single' | 'basket') => void;
   setOrderType: (type: 'market' | 'limit') => void;
   setAmount: (amount: string) => void;
   setSide: (side: 'long' | 'short') => void;
+  setSelectedLongAsset: (asset: string | null) => void;
+  setSelectedShortAsset: (asset: string | null) => void;
 }
 
 export const useTradeStore = create<TradeState>((set) => ({
   selectedTheme: null,
   selectedPair: null,
-  tradeType: 'theme',
+  tradeType: 'pair',
   orderType: 'market',
   amount: '',
   side: 'long',
+  selectedLongAsset: null,
+  selectedShortAsset: null,
   setSelectedTheme: (theme) => set({ selectedTheme: theme }),
   setSelectedPair: (pair) => set({ selectedPair: pair }),
   setTradeType: (type) => set({ tradeType: type }),
   setOrderType: (type) => set({ orderType: type }),
   setAmount: (amount) => set({ amount }),
   setSide: (side) => set({ side }),
+  setSelectedLongAsset: (asset) => set({ selectedLongAsset: asset }),
+  setSelectedShortAsset: (asset) => set({ selectedShortAsset: asset }),
 }));
 
 // Learn Store
