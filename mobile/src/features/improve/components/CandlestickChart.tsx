@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -22,20 +22,44 @@ interface CandlestickChartProps {
   tradingPair: string;
   timeframe: string;
   data?: CandleData[];
+  /** Unique seed to generate consistent data per scenario */
+  seed?: string;
+  /** Whether to show bullish or bearish outcome (for solution view) */
+  showOutcome?: 'up' | 'down' | null;
 }
 
-// Generate mock candlestick data for demo
-const generateMockData = (count: number = 20): CandleData[] => {
+// Simple seeded random number generator for consistent data
+const seededRandom = (seed: string) => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    const char = seed.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  let value = Math.abs(hash);
+  return () => {
+    value = (value * 9301 + 49297) % 233280;
+    return value / 233280;
+  };
+};
+
+// Generate mock candlestick data for demo with optional seed for consistency
+const generateMockData = (count: number = 20, seed?: string, showOutcome?: 'up' | 'down' | null): CandleData[] => {
+  const random = seed ? seededRandom(seed) : Math.random;
   const data: CandleData[] = [];
-  let price = 45000 + Math.random() * 5000;
+  let price = 45000 + random() * 5000;
   const now = Date.now();
   
-  for (let i = 0; i < count; i++) {
-    const change = (Math.random() - 0.45) * 1000; // Slight upward bias
+  // For "before" state, show neutral/sideways action for first candles
+  // For "after" state with outcome, add outcome candles at the end
+  const baseCount = showOutcome ? count - 3 : count;
+  
+  for (let i = 0; i < baseCount; i++) {
+    const change = (random() - 0.48) * 800; // Mostly sideways movement
     const open = price;
     const close = price + change;
-    const high = Math.max(open, close) + Math.random() * 300;
-    const low = Math.min(open, close) - Math.random() * 300;
+    const high = Math.max(open, close) + random() * 250;
+    const low = Math.min(open, close) - random() * 250;
     
     data.push({
       open,
@@ -46,6 +70,30 @@ const generateMockData = (count: number = 20): CandleData[] => {
     });
     
     price = close;
+  }
+  
+  // Add outcome candles if showing solution
+  if (showOutcome) {
+    const outcomeMultiplier = showOutcome === 'up' ? 1 : -1;
+    
+    for (let i = 0; i < 3; i++) {
+      const moveStrength = 400 + random() * 300; // Strong move
+      const change = outcomeMultiplier * moveStrength;
+      const open = price;
+      const close = price + change;
+      const high = Math.max(open, close) + random() * 150;
+      const low = Math.min(open, close) - random() * 150;
+      
+      data.push({
+        open,
+        high,
+        low,
+        close,
+        timestamp: now - (3 - i) * 3600000,
+      });
+      
+      price = close;
+    }
   }
   
   return data;
@@ -59,10 +107,18 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   tradingPair,
   timeframe,
   data: providedData,
+  seed,
+  showOutcome = null,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [chartHeight, setChartHeight] = useState(240); // Dynamic height
-  const data = providedData || generateMockData(20);
+  
+  // Memoize the data to prevent regeneration on re-renders
+  // Data only changes when seed or showOutcome changes
+  const data = useMemo(() => {
+    if (providedData) return providedData;
+    return generateMockData(20, seed, showOutcome);
+  }, [providedData, seed, showOutcome]);
   
   // Calculate min/max for scaling
   const prices = data.flatMap(c => [c.high, c.low]);

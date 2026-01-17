@@ -225,14 +225,31 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
 
     return (
       <>
-        {/* Tertiary gradient layer (background) - smooth like screenshot */}
+        {/* Base dark gradient - same as community page */}
+        <View style={StyleSheet.absoluteFill}>
+          <LinearGradient
+            colors={[
+              '#0A0500', // Deep near-black
+              '#1A0F00', // Dark charcoal with orange hint
+              '#2A1505', // Dark orange-brown
+              '#1A0F00', // Back to charcoal
+              '#0F0800', // Deep navy-orange blend
+            ]}
+            locations={[0, 0.3, 0.5, 0.7, 1]}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+
+        {/* Tertiary gradient layer (background) - orange tones */}
         <Animated.View style={[styles.gradientContainer, animatedTertiaryStyle]}>
           <LinearGradient
             colors={[
-              'rgba(16, 185, 129, 0)',
-              'rgba(16, 185, 129, 0.15)',
-              'rgba(5, 150, 105, 0.25)',
-              'rgba(4, 120, 87, 0.35)',
+              'rgba(255, 107, 53, 0)',
+              'rgba(255, 107, 53, 0.12)',
+              'rgba(255, 140, 60, 0.20)',
+              'rgba(255, 69, 0, 0.28)',
             ]}
             locations={[0, 0.3, 0.6, 1]}
             style={StyleSheet.absoluteFill}
@@ -241,14 +258,14 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
           />
         </Animated.View>
 
-        {/* Secondary gradient layer - smooth blend */}
+        {/* Secondary gradient layer - smooth orange blend */}
         <Animated.View style={[styles.gradientContainer, animatedSecondaryStyle]}>
           <LinearGradient
             colors={[
-              'rgba(5, 150, 105, 0)',
-              'rgba(5, 150, 105, 0.2)',
-              'rgba(16, 185, 129, 0.35)',
-              'rgba(16, 185, 129, 0.45)',
+              'rgba(255, 140, 60, 0)',
+              'rgba(255, 140, 60, 0.15)',
+              'rgba(255, 107, 53, 0.28)',
+              'rgba(255, 107, 53, 0.38)',
             ]}
             locations={[0, 0.35, 0.7, 1]}
             style={StyleSheet.absoluteFill}
@@ -257,14 +274,14 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
           />
         </Animated.View>
 
-        {/* Primary gradient layer (foreground) - brightest */}
+        {/* Primary gradient layer (foreground) - brightest orange */}
         <Animated.View style={[styles.gradientContainer, animatedContainerStyle]}>
           <LinearGradient
             colors={[
-              'rgba(16, 185, 129, 0)',
-              'rgba(16, 185, 129, 0.25)',
-              'rgba(16, 185, 129, 0.5)',
-              'rgba(5, 150, 105, 0.6)',
+              'rgba(255, 107, 53, 0)',
+              'rgba(255, 107, 53, 0.20)',
+              'rgba(255, 140, 60, 0.40)',
+              'rgba(255, 179, 71, 0.50)',
             ]}
             locations={[0, 0.4, 0.75, 1]}
             style={StyleSheet.absoluteFill}
@@ -273,10 +290,27 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
           />
         </Animated.View>
 
+        {/* Flowing orange gradient layer - same as community page */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <LinearGradient
+            colors={[
+              'rgba(255, 107, 53, 0.08)',
+              'rgba(255, 140, 60, 0.04)',
+              'transparent',
+              'rgba(255, 179, 71, 0.06)',
+              'rgba(255, 107, 53, 0.05)',
+            ]}
+            locations={[0, 0.25, 0.5, 0.75, 1]}
+            start={{ x: 0.3, y: 0.2 }}
+            end={{ x: 0.7, y: 0.8 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+
         {/* Dark gradient mask overlay for depth */}
         <Animated.View style={[styles.darkMask, darkMaskStyle]} pointerEvents="none">
           <LinearGradient
-            colors={['transparent', 'rgba(0, 0, 0, 0.4)', theme.colors.background]}
+            colors={['transparent', 'rgba(0, 0, 0, 0.3)', '#000000']}
             locations={[0, 0.5, 1]}
             style={StyleSheet.absoluteFill}
             start={{ x: 0.5, y: 1 }}
@@ -290,7 +324,7 @@ export const LiquidFireBackground = forwardRef<LiquidFireBackgroundRef, LiquidFi
         {/* Top fade to black for smooth blending */}
         <View style={styles.topFade} pointerEvents="none">
           <LinearGradient
-            colors={[theme.colors.background, 'transparent']}
+            colors={['#000000', 'transparent']}
             style={StyleSheet.absoluteFill}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}

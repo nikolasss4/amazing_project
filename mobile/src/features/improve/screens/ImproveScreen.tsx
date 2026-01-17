@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -14,6 +14,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { GlassPanel } from '@ui/primitives/GlassPanel';
 import { theme } from '@app/theme';
 import { useImproveStore } from '@app/store';
@@ -44,6 +45,9 @@ export const ImproveScreen: React.FC = () => {
   const flipRotation = useSharedValue(0);
   const streakPulse = useSharedValue(1);
   const feedbackOpacity = useSharedValue(0);
+  
+  // Border color state: 0 = silver (neutral), 1 = green (correct), -1 = red (incorrect)
+  const borderColorState = useSharedValue(0);
 
   // Swipe gesture for front card dismissal
   const { gesture: swipeGesture, animatedStyle: swipeAnimatedStyle, reset: resetSwipe } = useSwipeGesture({
@@ -101,19 +105,20 @@ export const ImproveScreen: React.FC = () => {
     opacity: feedbackOpacity.value,
   }));
 
-  // Select answer (does NOT flip card)
+  // Select answer and immediately show solution
   const handleAnswerSelect = (answer: Answer) => {
+    // Allow re-answering after flip back (isFlipped will be false)
     if (isFlipped) return;
+    
     setSelectedAnswer(answer);
     HapticPatterns.buttonPress();
-  };
-
-  // Show solution (flips card)
-  const handleShowSolution = () => {
-    if (!selectedAnswer || isFlipped) return;
-
-    const correct = selectedAnswer === currentScenario.correctAnswer;
+    
+    // Immediately trigger solution reveal
+    const correct = answer === currentScenario.correctAnswer;
     setIsCorrect(correct);
+    
+    // Update border color state (1 = green, -1 = red)
+    borderColorState.value = withTiming(correct ? 1 : -1, { duration: 400 });
 
     // Haptic feedback
     if (correct) {
@@ -152,9 +157,18 @@ export const ImproveScreen: React.FC = () => {
     }
   };
 
-  // Flip back to front side
+  // Legacy function kept for reference but no longer used
+  const handleShowSolution = () => {
+    // No longer used - answer buttons trigger solution directly
+  };
+
+  // Flip back to front side - allows re-answering
   const handleFlipBack = () => {
     HapticPatterns.cardFlip();
+    // Reset border color to silver
+    borderColorState.value = withTiming(0, { duration: 400 });
+    // Reset answer selection to allow re-answering
+    setSelectedAnswer(null);
     flipRotation.value = withTiming(0, { duration: 600, easing: Easing.inOut(Easing.ease) }, () => {
       runOnJS(setIsFlipped)(false);
     });
@@ -166,6 +180,7 @@ export const ImproveScreen: React.FC = () => {
     setSelectedAnswer(null);
     setIsCorrect(false);
     flipRotation.value = 0;
+    borderColorState.value = 0; // Reset to silver
     resetSwipe();
     resetBackSwipe();
 
@@ -190,11 +205,12 @@ export const ImproveScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Animated liquid fire background */}
+    <View style={styles.container}>
+      {/* Dynamic background that responds to streak - with community page orange colors */}
       <LiquidFireBackground ref={backgroundRef} streak={streak} />
 
-      <View style={styles.content}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Improve</Text>
@@ -221,175 +237,175 @@ export const ImproveScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Scenario Card Container */}
-        <View style={styles.cardContainer}>
-          {/* Loading State */}
-          {isLoading && <ScenarioCardSkeleton />}
+        {/* Scenario Card Container with padding */}
+        <View style={styles.cardContainerWrapper}>
+          <View style={styles.cardContainer}>
+            {/* Loading State */}
+            {isLoading && <ScenarioCardSkeleton />}
 
-          {/* Empty State */}
-          {!isLoading && scenarios.length === 0 && <EmptyState />}
+            {/* Empty State */}
+            {!isLoading && scenarios.length === 0 && <EmptyState />}
 
-          {/* Scenario Card - only show when loaded and has scenarios */}
-          {!isLoading && scenarios.length > 0 && currentScenario && (
-            <>
-              {/* Front of card */}
-              <GestureDetector gesture={swipeGesture}>
+            {/* Scenario Card - only show when loaded and has scenarios */}
+            {!isLoading && scenarios.length > 0 && currentScenario && (
+              <>
+                {/* Static Gradient Border */}
+                <View style={styles.gradientBorderContainer}>
+                  <StaticGradientBorder colorState={borderColorState} />
+                  <View style={styles.gradientBorderInner} />
+                </View>
+                
+                {/* Front of card */}
                 <Animated.View style={[styles.card, frontAnimatedStyle, swipeAnimatedStyle]}>
-                  <GlassPanel style={styles.cardContent} variant="black">
-                    {/* Top section: Chart (70%) */}
-                    <View style={styles.chartSection}>
-                      <CandlestickChart
-                        tradingPair={currentScenario.tradingPair}
-                        timeframe={currentScenario.timeframe}
+                  <View style={styles.cardContent}>
+                    {/* Top section: Chart - swipeable area */}
+                    <GestureDetector gesture={swipeGesture}>
+                      <View style={styles.chartSection}>
+                        <CandlestickChart
+                          tradingPair={currentScenario.tradingPair}
+                          timeframe={currentScenario.timeframe}
+                          seed={currentScenario.id}
+                          showOutcome={null}
+                        />
+                      </View>
+                    </GestureDetector>
+
+                  {/* Bottom section: Split left/right - NOT wrapped in gesture detector for button clickability */}
+                  <View style={styles.bottomSection}>
+                    {/* Left: Scenario text */}
+                    <View style={styles.scenarioContainer}>
+                      <Text style={styles.scenarioLabel}>SCENARIO</Text>
+                      <Text style={styles.scenarioText}>
+                        {currentScenario.economicContext}
+                      </Text>
+                    </View>
+
+                    {/* Right: Action buttons (vertical stack) */}
+                    <View style={styles.actionsContainer}>
+                      <UpDownButton
+                        direction="up"
+                        selected={selectedAnswer === 'up'}
+                        disabled={isFlipped}
+                        onPress={() => handleAnswerSelect('up')}
+                      />
+                      <UpDownButton
+                        direction="down"
+                        selected={selectedAnswer === 'down'}
+                        disabled={isFlipped}
+                        onPress={() => handleAnswerSelect('down')}
                       />
                     </View>
-
-                {/* Bottom section: Split left/right (33%) */}
-                <View style={styles.bottomSection}>
-                  {/* Left: Scenario text */}
-                  <View style={styles.scenarioContainer}>
-                    <Text style={styles.scenarioLabel}>SCENARIO</Text>
-                    <Text style={styles.scenarioText}>
-                      {currentScenario.economicContext}
-                    </Text>
                   </View>
 
-                  {/* Right: Action buttons (vertical stack) */}
+                  {/* Skip button in corner */}
+                  <Pressable style={styles.skipButton} onPress={handleSkip}>
+                    <Text style={styles.skipText}>Skip</Text>
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
+                  </Pressable>
+                </View>
+              </Animated.View>
+
+            {/* Back of card (Solution) - also swipeable */}
+            <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
+              <View style={styles.cardContent}>
+                {/* Top section: Solution chart with outcome */}
+                <GestureDetector gesture={backSwipeGesture}>
+                  <View style={styles.chartSection}>
+                    <CandlestickChart
+                      tradingPair={currentScenario.tradingPair}
+                      timeframe={currentScenario.timeframe}
+                      seed={`${currentScenario.id}-solution`}
+                      showOutcome={currentScenario.correctAnswer as 'up' | 'down'}
+                    />
+                    {/* Result overlay on chart */}
+                    <View style={[
+                      styles.resultOverlay,
+                      isCorrect ? styles.resultOverlayCorrect : styles.resultOverlayIncorrect
+                    ]}>
+                      <Ionicons
+                        name={isCorrect ? 'checkmark-circle' : 'close-circle'}
+                        size={32}
+                        color={isCorrect ? theme.colors.success : theme.colors.error}
+                      />
+                      <Text style={[
+                        styles.resultOverlayText,
+                        { color: isCorrect ? theme.colors.success : theme.colors.error }
+                      ]}>
+                        {isCorrect ? 'Correct!' : 'Incorrect'}
+                      </Text>
+                      {isCorrect && (
+                        <Text style={styles.xpText}>+{currentScenario.xpReward} XP</Text>
+                      )}
+                    </View>
+                  </View>
+                </GestureDetector>
+
+                {/* Bottom section: Analysis & Actions - NOT wrapped in gesture detector */}
+                <View style={styles.bottomSection}>
+                  {/* Left: What happened analysis */}
+                  <View style={styles.analysisContainer}>
+                    <Text style={styles.analysisLabel}>WHAT HAPPENED</Text>
+                    <Text style={styles.analysisText} numberOfLines={3}>
+                      {currentScenario.explanation}
+                    </Text>
+                    <View style={styles.answerSummary}>
+                      <View style={styles.answerRow}>
+                        <Text style={styles.answerSummaryLabel}>You:</Text>
+                        <View style={styles.answerBadge}>
+                          <Ionicons
+                            name={selectedAnswer ? getAnswerIcon(selectedAnswer) : 'help'}
+                            size={14}
+                            color={selectedAnswer ? getAnswerColor(selectedAnswer) : theme.colors.textSecondary}
+                          />
+                          <Text style={[
+                            styles.answerBadgeText,
+                            selectedAnswer && { color: getAnswerColor(selectedAnswer) }
+                          ]}>
+                            {selectedAnswer?.toUpperCase() || '-'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.answerRow}>
+                        <Text style={styles.answerSummaryLabel}>Correct:</Text>
+                        <View style={styles.answerBadge}>
+                          <Ionicons
+                            name={getAnswerIcon(currentScenario.correctAnswer as Answer)}
+                            size={14}
+                            color={getAnswerColor(currentScenario.correctAnswer as Answer)}
+                          />
+                          <Text style={[
+                            styles.answerBadgeText,
+                            { color: getAnswerColor(currentScenario.correctAnswer as Answer) }
+                          ]}>
+                            {currentScenario.correctAnswer.toUpperCase()}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Right: Solution actions */}
                   <View style={styles.actionsContainer}>
                     <LiquidGlassButton
-                      label="Up"
-                      icon="trending-up"
-                      variant="primary"
-                      selected={selectedAnswer === 'up'}
-                      disabled={isFlipped}
-                      color={theme.colors.bullish}
-                      onPress={() => handleAnswerSelect('up')}
-                    />
-                    <LiquidGlassButton
-                      label="Down"
-                      icon="trending-down"
-                      variant="primary"
-                      selected={selectedAnswer === 'down'}
-                      disabled={isFlipped}
-                      color={theme.colors.bearish}
-                      onPress={() => handleAnswerSelect('down')}
-                    />
-                    <LiquidGlassButton
-                      label="Show Solution"
+                      label="Try Again"
+                      icon="refresh"
                       variant="secondary"
-                      disabled={!selectedAnswer || isFlipped}
-                      onPress={handleShowSolution}
+                      onPress={handleFlipBack}
+                    />
+                    <LiquidGlassButton
+                      label="Next"
+                      icon="arrow-forward"
+                      variant="primary"
+                      color={theme.colors.accent}
+                      onPress={handleNext}
                     />
                   </View>
                 </View>
-
-                {/* Skip button in corner */}
-                <Pressable style={styles.skipButton} onPress={handleSkip}>
-                  <Text style={styles.skipText}>Skip</Text>
-                  <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
-                </Pressable>
-              </GlassPanel>
-            </Animated.View>
-          </GestureDetector>
-
-          {/* Back of card (Solution) - also swipeable */}
-          <GestureDetector gesture={backSwipeGesture}>
-            <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
-              <GlassPanel style={styles.cardContent} variant="black">
-              {/* Top section: Solution chart */}
-              <View style={styles.chartSection}>
-                <CandlestickChart
-                  tradingPair={currentScenario.tradingPair}
-                  timeframe={currentScenario.timeframe}
-                />
-                {/* Result overlay on chart */}
-                <View style={[
-                  styles.resultOverlay,
-                  isCorrect ? styles.resultOverlayCorrect : styles.resultOverlayIncorrect
-                ]}>
-                  <Ionicons
-                    name={isCorrect ? 'checkmark-circle' : 'close-circle'}
-                    size={32}
-                    color={isCorrect ? theme.colors.success : theme.colors.error}
-                  />
-                  <Text style={[
-                    styles.resultOverlayText,
-                    { color: isCorrect ? theme.colors.success : theme.colors.error }
-                  ]}>
-                    {isCorrect ? 'Correct!' : 'Incorrect'}
-                  </Text>
-                  {isCorrect && (
-                    <Text style={styles.xpText}>+{currentScenario.xpReward} XP</Text>
-                  )}
                 </View>
-              </View>
-
-              {/* Bottom section: Analysis & Actions */}
-              <View style={styles.bottomSection}>
-                {/* Left: What happened analysis */}
-                <View style={styles.analysisContainer}>
-                  <Text style={styles.analysisLabel}>WHAT HAPPENED</Text>
-                  <Text style={styles.analysisText} numberOfLines={3}>
-                    {currentScenario.explanation}
-                  </Text>
-                  <View style={styles.answerSummary}>
-                    <View style={styles.answerRow}>
-                      <Text style={styles.answerSummaryLabel}>You:</Text>
-                      <View style={styles.answerBadge}>
-                        <Ionicons
-                          name={selectedAnswer ? getAnswerIcon(selectedAnswer) : 'help'}
-                          size={14}
-                          color={selectedAnswer ? getAnswerColor(selectedAnswer) : theme.colors.textSecondary}
-                        />
-                        <Text style={[
-                          styles.answerBadgeText,
-                          selectedAnswer && { color: getAnswerColor(selectedAnswer) }
-                        ]}>
-                          {selectedAnswer?.toUpperCase() || '-'}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.answerRow}>
-                      <Text style={styles.answerSummaryLabel}>Correct:</Text>
-                      <View style={styles.answerBadge}>
-                        <Ionicons
-                          name={getAnswerIcon(currentScenario.correctAnswer as Answer)}
-                          size={14}
-                          color={getAnswerColor(currentScenario.correctAnswer as Answer)}
-                        />
-                        <Text style={[
-                          styles.answerBadgeText,
-                          { color: getAnswerColor(currentScenario.correctAnswer as Answer) }
-                        ]}>
-                          {currentScenario.correctAnswer.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Right: Solution actions */}
-                <View style={styles.actionsContainer}>
-                  <LiquidGlassButton
-                    label="Flip Back"
-                    icon="refresh"
-                    variant="secondary"
-                    onPress={handleFlipBack}
-                  />
-                  <LiquidGlassButton
-                    label="Next"
-                    icon="arrow-forward"
-                    variant="primary"
-                    color={theme.colors.accent}
-                    onPress={handleNext}
-                  />
-                </View>
-              </View>
-              </GlassPanel>
-            </Animated.View>
-          </GestureDetector>
-            </>
-          )}
+              </Animated.View>
+              </>
+            )}
+          </View>
         </View>
 
         {/* Feedback overlay */}
@@ -409,8 +425,140 @@ export const ImproveScreen: React.FC = () => {
             />
           </Animated.View>
         )}
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+};
+
+// Static Gradient Border Component - like the screenshot with colorful border
+interface StaticGradientBorderProps {
+  colorState: Animated.SharedValue<number>;
+}
+
+const StaticGradientBorder: React.FC<StaticGradientBorderProps> = ({ colorState }) => {
+  return (
+    <View style={styles.gradientBorderStack}>
+      {/* Silver gradient (neutral) - multicolor like screenshot but silver tones */}
+      <Animated.View style={[StyleSheet.absoluteFill, useAnimatedStyle(() => ({
+        opacity: interpolate(Math.abs(colorState.value), [0, 1], [1, 0]),
+      }))]}>
+        <LinearGradient
+          colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      
+      {/* Green gradient (correct) */}
+      <Animated.View style={[StyleSheet.absoluteFill, useAnimatedStyle(() => ({
+        opacity: interpolate(colorState.value, [0, 1], [0, 1]),
+      }))]}>
+        <LinearGradient
+          colors={['#00E676', '#69F0AE', '#00C853', '#A5D6A7', '#4CAF50', '#81C784']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      
+      {/* Red gradient (incorrect) */}
+      <Animated.View style={[StyleSheet.absoluteFill, useAnimatedStyle(() => ({
+        opacity: interpolate(colorState.value, [-1, 0], [1, 0]),
+      }))]}>
+        <LinearGradient
+          colors={['#FF5252', '#FF8A80', '#F44336', '#FFCDD2', '#E57373', '#EF9A9A']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
+  );
+};
+
+// Up/Down Button Component with green/red liquid glass style
+interface UpDownButtonProps {
+  direction: 'up' | 'down';
+  selected?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}
+
+const UpDownButton: React.FC<UpDownButtonProps> = ({
+  direction,
+  selected = false,
+  disabled = false,
+  onPress,
+}) => {
+  const scale = useSharedValue(1);
+  const brightness = useSharedValue(1);
+  
+  const isUp = direction === 'up';
+  const buttonColor = isUp ? theme.colors.bullish : theme.colors.bearish;
+  const label = isUp ? 'Up' : 'Down';
+  const icon = isUp ? 'trending-up' : 'trending-down';
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: brightness.value,
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.95, { damping: 15, stiffness: 300 });
+    brightness.value = withTiming(0.8, { duration: 100 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    brightness.value = withTiming(1, { duration: 100 });
+  };
+
+  const handlePress = () => {
+    if (!disabled) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress();
+    }
+  };
+
+  return (
+    <AnimatedPressable
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={handlePress}
+      disabled={disabled}
+      style={[
+        styles.upDownButton,
+        { borderColor: `${buttonColor}40` },
+        selected && { borderColor: buttonColor, backgroundColor: `${buttonColor}25` },
+        disabled && styles.upDownButtonDisabled,
+        animatedStyle,
+      ]}
+    >
+      <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+      {/* Colored glow overlay */}
+      <View 
+        style={[
+          styles.buttonGlowOverlay, 
+          { backgroundColor: `${buttonColor}15` }
+        ]} 
+        pointerEvents="none" 
+      />
+      <View style={styles.upDownButtonContent} pointerEvents="none">
+        <Ionicons
+          name={icon as keyof typeof Ionicons.glyphMap}
+          size={20}
+          color={selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor)}
+        />
+        <Text style={[
+          styles.upDownButtonText,
+          { color: selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor) },
+        ]}>
+          {label}
+        </Text>
       </View>
-    </SafeAreaView>
+    </AnimatedPressable>
   );
 };
 
@@ -476,8 +624,8 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
         animatedStyle,
       ]}
     >
-      <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
-      <View style={styles.glassButtonContent}>
+      <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <View style={styles.glassButtonContent} pointerEvents="none">
         {icon && (
           <Ionicons
             name={icon}
@@ -500,7 +648,10 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#000000',
+  },
+  safeArea: {
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -557,19 +708,51 @@ const styles = StyleSheet.create({
   streakTextGlow: {
     color: theme.colors.warning,
   },
-  // Card
+  // Card wrapper with padding from phone edges
+  cardContainerWrapper: {
+    flex: 1,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: 100, // Large bottom padding to avoid menu overlap
+  },
+  // Card container
   cardContainer: {
-    width: 360,
-    height: 580,
-    alignSelf: 'center',
+    flex: 1,
+    width: '100%',
     position: 'relative',
   },
-  card: {
+  // Gradient border styles - static border like screenshot
+  gradientBorderContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    borderRadius: theme.borderRadius.xl,
+    padding: 2,
+    overflow: 'hidden',
+  },
+  gradientBorderStack: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.borderRadius.xl,
+    overflow: 'hidden',
+  },
+  gradientBorderInner: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    right: 2,
+    bottom: 2,
+    backgroundColor: 'rgba(10, 10, 14, 0.98)',
+    borderRadius: theme.borderRadius.xl - 2,
+  },
+  card: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    right: 2,
+    bottom: 2,
+    borderRadius: theme.borderRadius.xl - 2,
+    overflow: 'hidden',
   },
   cardBack: {
     backfaceVisibility: 'hidden',
@@ -580,6 +763,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'column',
     position: 'relative',
+    backgroundColor: 'rgba(10, 10, 14, 0.98)',
+    borderRadius: theme.borderRadius.xl - 2,
   },
   // Chart section (larger portion of card)
   chartSection: {
@@ -612,20 +797,50 @@ const styles = StyleSheet.create({
   scenarioLabel: {
     fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textTertiary,
-    letterSpacing: 1,
+    color: 'rgba(255, 255, 255, 0.5)',
+    letterSpacing: 1.5,
     marginBottom: theme.spacing.sm,
+    textTransform: 'uppercase',
   },
   scenarioText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: theme.colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: theme.typography.weights.regular,
   },
   // Actions (right side)
   actionsContainer: {
-    width: 105,
+    width: 110,
     justifyContent: 'flex-start',
+    gap: theme.spacing.sm,
+    zIndex: 10, // Ensure buttons are above other elements
+  },
+  // Up/Down Button styles
+  upDownButton: {
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  upDownButtonDisabled: {
+    opacity: 0.4,
+  },
+  buttonGlowOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.borderRadius.md,
+  },
+  upDownButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    minHeight: 44,
+  },
+  upDownButtonText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
   },
   // Skip button
   skipButton: {
@@ -679,14 +894,16 @@ const styles = StyleSheet.create({
   analysisLabel: {
     fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textTertiary,
-    letterSpacing: 1,
+    color: 'rgba(255, 255, 255, 0.5)',
+    letterSpacing: 1.5,
     marginBottom: theme.spacing.sm,
+    textTransform: 'uppercase',
   },
   analysisText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: theme.colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: theme.typography.weights.regular,
     marginBottom: theme.spacing.sm,
   },
   answerSummary: {
