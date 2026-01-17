@@ -1,0 +1,1 @@
+"""Gamified Trading Backend Application."""
