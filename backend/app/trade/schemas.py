@@ -214,3 +214,73 @@ class InstrumentsListResponse(BaseModel):
     instruments: list[Instrument]
     count: int
     cached_at: datetime | None = None
+
+
+# ============================================================================
+# Pear Authentication & Agent Wallet Schemas
+# ============================================================================
+
+
+class PearEIP712MessageResponse(BaseModel):
+    """EIP-712 message structure for wallet signature."""
+
+    domain: dict[str, Any]
+    types: dict[str, Any]
+    message: dict[str, Any]
+
+
+class PearLoginRequest(BaseModel):
+    """Request to login with EIP-712 signature."""
+
+    method: str = Field(default="eip712", description="Authentication method")
+    address: str = Field(..., description="Wallet address")
+    client_id: str = Field(default="APITRADER", description="Client ID")
+    details: dict[str, str] = Field(..., description="Contains signature")
+
+
+class PearAuthTokenResponse(BaseModel):
+    """Authentication token response."""
+
+    access_token: str
+    refresh_token: str
+    expires_in: int | None = None
+    token_type: str = "Bearer"
+
+
+class PearRefreshTokenRequest(BaseModel):
+    """Request to refresh access token."""
+
+    refresh_token: str
+
+
+class AgentWalletStatus(str, Enum):
+    """Agent wallet status."""
+
+    NOT_FOUND = "NOT_FOUND"
+    ACTIVE = "ACTIVE"
+    EXPIRED = "EXPIRED"
+
+
+class PearAgentWalletResponse(BaseModel):
+    """Agent wallet response."""
+
+    address: str | None = None
+    status: AgentWalletStatus
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class PearCreateAgentWalletResponse(BaseModel):
+    """Response from creating an agent wallet."""
+
+    address: str
+    status: str
+    expires_at: datetime
+    created_at: datetime
+
+
+class PearApproveAgentWalletRequest(BaseModel):
+    """Request to approve an agent wallet."""
+
+    agent_address: str = Field(..., description="The agent wallet address to approve")
+    signature: str = Field(..., description="User's signature approving the agent wallet")

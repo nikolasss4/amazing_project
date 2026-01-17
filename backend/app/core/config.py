@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     HYPERLIQUID_WALLET_ADDRESS: str = ""
 
     # Pear Protocol
-    PEAR_API_URL: str = "https://api.pear.garden"
+    PEAR_API_URL: str = "https://hl-v2.pearprotocol.io"
     PEAR_API_KEY: str = ""
 
     # OpenAI
