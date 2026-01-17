@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -10,6 +10,7 @@ import Animated, {
   interpolate,
   runOnJS,
   Easing,
+  SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +29,70 @@ import { HapticPatterns } from '../utils/haptics';
 import { GestureDetector } from 'react-native-gesture-handler';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// Static Gradient Border Component - extracted outside to prevent hook violations
+// Each animated layer is a separate memoized component with its own hook
+const SilverGradientLayer = memo(({ colorState }: { colorState: SharedValue<number> }) => {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(Math.abs(colorState.value), [0, 1], [1, 0]),
+  }));
+  
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
+      <LinearGradient
+        colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+});
+
+const GreenGradientLayer = memo(({ colorState }: { colorState: SharedValue<number> }) => {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(colorState.value, [0, 1], [0, 1]),
+  }));
+  
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
+      <LinearGradient
+        colors={['#00E676', '#69F0AE', '#00C853', '#A5D6A7', '#4CAF50', '#81C784']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+});
+
+const RedGradientLayer = memo(({ colorState }: { colorState: SharedValue<number> }) => {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(colorState.value, [-1, 0], [1, 0]),
+  }));
+  
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
+      <LinearGradient
+        colors={['#FF5252', '#FF8A80', '#F44336', '#FFCDD2', '#E57373', '#EF9A9A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+});
+
+// Main gradient border component - properly memoized
+const StaticGradientBorder = memo(({ colorState }: { colorState: SharedValue<number> }) => {
+  return (
+    <View style={styles.gradientBorderStack}>
+      <SilverGradientLayer colorState={colorState} />
+      <GreenGradientLayer colorState={colorState} />
+      <RedGradientLayer colorState={colorState} />
+    </View>
+  );
+});
 
 export const ImproveScreen: React.FC = () => {
   const { totalXP, streak, addXP, incrementStreak, incrementCorrect, resetStreak } = useImproveStore();
@@ -49,19 +114,53 @@ export const ImproveScreen: React.FC = () => {
   // Border color state: 0 = silver (neutral), 1 = green (correct), -1 = red (incorrect)
   const borderColorState = useSharedValue(0);
 
+  // Ref to hold the next scenario handler (avoids circular dependency)
+  const handleNextScenarioRef = useRef<() => void>(() => {});
+
   // Swipe gesture for front card dismissal
-  const { gesture: swipeGesture, animatedStyle: swipeAnimatedStyle, reset: resetSwipe } = useSwipeGesture({
-    onSwipeComplete: handleSkip,
+  const { gesture: swipeGesture, animatedStyle: swipeAnimatedStyle, nextCardAnimatedStyle, reset: resetSwipe } = useSwipeGesture({
+    onSwipeComplete: () => handleNextScenarioRef.current(),
     onSwipeStart: () => HapticPatterns.cardSwipe(),
   });
 
   // Swipe gesture for back card (solution) - advances to next scenario
-  const { gesture: backSwipeGesture, animatedStyle: backSwipeAnimatedStyle, reset: resetBackSwipe } = useSwipeGesture({
-    onSwipeComplete: () => {
-      handleNext();
-    },
+  const { gesture: backSwipeGesture, animatedStyle: backSwipeAnimatedStyle, nextCardAnimatedStyle: backNextCardAnimatedStyle, reset: resetBackSwipe } = useSwipeGesture({
+    onSwipeComplete: () => handleNextScenarioRef.current(),
     onSwipeStart: () => HapticPatterns.cardSwipe(),
   });
+
+  // Define handleNextScenario - advances to next card
+  // Uses synchronous state updates to prevent race conditions
+  const handleNextScenario = useCallback(() => {
+    // Update state for next card (synchronous batch)
+    setIsFlipped(false);
+    setSelectedAnswer(null);
+    setIsCorrect(false);
+    flipRotation.value = 0;
+    borderColorState.value = 0; // Reset to silver
+
+    if (currentScenarioIndex < scenarios.length - 1) {
+      setCurrentScenarioIndex(prev => prev + 1);
+    } else {
+      setCurrentScenarioIndex(0); // Loop back
+    }
+  }, [currentScenarioIndex, flipRotation, borderColorState, scenarios.length]);
+
+  // Keep ref up to date with latest callback
+  useEffect(() => {
+    handleNextScenarioRef.current = handleNextScenario;
+  }, [handleNextScenario]);
+
+  // Reset swipe animations when scenario changes
+  // Immediate reset since we use cancelAnimation in the hook
+  useEffect(() => {
+    resetSwipe();
+    resetBackSwipe();
+  }, [currentScenarioIndex, resetSwipe, resetBackSwipe]);
+  
+  // Get next scenario for "deck" preview
+  const nextScenarioIndex = currentScenarioIndex < scenarios.length - 1 ? currentScenarioIndex + 1 : 0;
+  const nextScenario = scenarios[nextScenarioIndex];
 
   // Animate streak pulse when it increases
   useEffect(() => {
@@ -174,26 +273,17 @@ export const ImproveScreen: React.FC = () => {
     });
   };
 
-  // Advance to next scenario
+  // Handle "Next" button press (from solution card)
   const handleNext = () => {
-    setIsFlipped(false);
-    setSelectedAnswer(null);
-    setIsCorrect(false);
-    flipRotation.value = 0;
-    borderColorState.value = 0; // Reset to silver
     resetSwipe();
     resetBackSwipe();
-
-    if (currentScenarioIndex < scenarios.length - 1) {
-      setCurrentScenarioIndex(currentScenarioIndex + 1);
-    } else {
-      setCurrentScenarioIndex(0); // Loop back
-    }
+    handleNextScenario();
   };
 
+  // Handle "Skip" button press (triggers swipe animation then advances)
   function handleSkip() {
     HapticPatterns.cardSwipe();
-    handleNext();
+    handleNextScenario();
   }
 
   const getAnswerIcon = (answer: Answer): keyof typeof Ionicons.glyphMap => {
@@ -249,8 +339,61 @@ export const ImproveScreen: React.FC = () => {
             {/* Scenario Card - only show when loaded and has scenarios */}
             {!isLoading && scenarios.length > 0 && currentScenario && (
               <>
+                {/* Next card preview (behind current card) - only visible during swipe on front */}
+                {!isFlipped && nextScenario && (
+                  <Animated.View 
+                    key={`next-front-${nextScenario.id}`}
+                    style={[styles.cardWrapper, styles.nextCardBehind, nextCardAnimatedStyle]}
+                  >
+                    <View style={styles.gradientBorderContainer}>
+                      <LinearGradient
+                        colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      <View style={styles.gradientBorderInner} />
+                    </View>
+                    <View style={styles.cardContent}>
+                      <View style={styles.chartSection}>
+                        <CandlestickChart
+                          tradingPair={nextScenario.tradingPair}
+                          timeframe={nextScenario.timeframe}
+                          seed={nextScenario.id}
+                          showOutcome={null}
+                        />
+                      </View>
+                      <View style={styles.bottomSection}>
+                        <View style={styles.scenarioContainer}>
+                          <Text style={styles.scenarioLabel}>SCENARIO</Text>
+                          <Text style={styles.scenarioText} numberOfLines={2}>
+                            {nextScenario.economicContext}
+                          </Text>
+                        </View>
+                        <View style={styles.actionsContainer}>
+                          <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
+                            <View style={styles.upDownButtonContent}>
+                              <Ionicons name="trending-up" size={20} color={theme.colors.textTertiary} />
+                              <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Up</Text>
+                            </View>
+                          </View>
+                          <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
+                            <View style={styles.upDownButtonContent}>
+                              <Ionicons name="trending-down" size={20} color={theme.colors.textTertiary} />
+                              <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Down</Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  </Animated.View>
+                )}
+
                 {/* Front of card with gradient border */}
-                <Animated.View style={[styles.cardWrapper, frontAnimatedStyle, swipeAnimatedStyle]}>
+                <Animated.View 
+                  key={`front-${currentScenario.id}`}
+                  style={[styles.cardWrapper, frontAnimatedStyle, swipeAnimatedStyle]}
+                >
                   {/* Gradient Border that flips with the card */}
                   <View style={styles.gradientBorderContainer}>
                     <StaticGradientBorder colorState={borderColorState} />
@@ -304,8 +447,61 @@ export const ImproveScreen: React.FC = () => {
                 </View>
               </Animated.View>
 
+            {/* Next card preview behind solution card - visible during swipe on back */}
+            {isFlipped && nextScenario && (
+              <Animated.View 
+                key={`next-back-${nextScenario.id}`}
+                style={[styles.cardWrapper, styles.nextCardBehind, backNextCardAnimatedStyle]}
+              >
+                <View style={styles.gradientBorderContainer}>
+                  <LinearGradient
+                    colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={styles.gradientBorderInner} />
+                </View>
+                <View style={styles.cardContent}>
+                  <View style={styles.chartSection}>
+                    <CandlestickChart
+                      tradingPair={nextScenario.tradingPair}
+                      timeframe={nextScenario.timeframe}
+                      seed={nextScenario.id}
+                      showOutcome={null}
+                    />
+                  </View>
+                  <View style={styles.bottomSection}>
+                    <View style={styles.scenarioContainer}>
+                      <Text style={styles.scenarioLabel}>SCENARIO</Text>
+                      <Text style={styles.scenarioText} numberOfLines={2}>
+                        {nextScenario.economicContext}
+                      </Text>
+                    </View>
+                    <View style={styles.actionsContainer}>
+                      <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
+                        <View style={styles.upDownButtonContent}>
+                          <Ionicons name="trending-up" size={20} color={theme.colors.textTertiary} />
+                          <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Up</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
+                        <View style={styles.upDownButtonContent}>
+                          <Ionicons name="trending-down" size={20} color={theme.colors.textTertiary} />
+                          <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Down</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </Animated.View>
+            )}
+
             {/* Back of card (Solution) with gradient border - also swipeable */}
-            <Animated.View style={[styles.cardWrapper, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}>
+            <Animated.View 
+              key={`back-${currentScenario.id}`}
+              style={[styles.cardWrapper, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}
+            >
               {/* Gradient Border that flips with the card */}
               <View style={styles.gradientBorderContainer}>
                 <StaticGradientBorder colorState={borderColorState} />
@@ -321,26 +517,6 @@ export const ImproveScreen: React.FC = () => {
                       seed={`${currentScenario.id}-solution`}
                       showOutcome={currentScenario.correctAnswer as 'up' | 'down'}
                     />
-                    {/* Result overlay on chart */}
-                    <View style={[
-                      styles.resultOverlay,
-                      isCorrect ? styles.resultOverlayCorrect : styles.resultOverlayIncorrect
-                    ]}>
-                      <Ionicons
-                        name={isCorrect ? 'checkmark-circle' : 'close-circle'}
-                        size={32}
-                        color={isCorrect ? theme.colors.success : theme.colors.error}
-                      />
-                      <Text style={[
-                        styles.resultOverlayText,
-                        { color: isCorrect ? theme.colors.success : theme.colors.error }
-                      ]}>
-                        {isCorrect ? 'Correct!' : 'Incorrect'}
-                      </Text>
-                      {isCorrect && (
-                        <Text style={styles.xpText}>+{currentScenario.xpReward} XP</Text>
-                      )}
-                    </View>
                   </View>
                 </GestureDetector>
 
@@ -431,53 +607,6 @@ export const ImproveScreen: React.FC = () => {
         )}
         </View>
       </SafeAreaView>
-    </View>
-  );
-};
-
-// Static Gradient Border Component - like the screenshot with colorful border
-interface StaticGradientBorderProps {
-  colorState: Animated.SharedValue<number>;
-}
-
-const StaticGradientBorder: React.FC<StaticGradientBorderProps> = ({ colorState }) => {
-  return (
-    <View style={styles.gradientBorderStack}>
-      {/* Silver gradient (neutral) - multicolor like screenshot but silver tones */}
-      <Animated.View style={[StyleSheet.absoluteFill, useAnimatedStyle(() => ({
-        opacity: interpolate(Math.abs(colorState.value), [0, 1], [1, 0]),
-      }))]}>
-        <LinearGradient
-          colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-      
-      {/* Green gradient (correct) */}
-      <Animated.View style={[StyleSheet.absoluteFill, useAnimatedStyle(() => ({
-        opacity: interpolate(colorState.value, [0, 1], [0, 1]),
-      }))]}>
-        <LinearGradient
-          colors={['#00E676', '#69F0AE', '#00C853', '#A5D6A7', '#4CAF50', '#81C784']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-      
-      {/* Red gradient (incorrect) */}
-      <Animated.View style={[StyleSheet.absoluteFill, useAnimatedStyle(() => ({
-        opacity: interpolate(colorState.value, [-1, 0], [1, 0]),
-      }))]}>
-        <LinearGradient
-          colors={['#FF5252', '#FF8A80', '#F44336', '#FFCDD2', '#E57373', '#EF9A9A']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
     </View>
   );
 };
@@ -758,6 +887,9 @@ const styles = StyleSheet.create({
   cardBack: {
     backfaceVisibility: 'hidden',
   },
+  nextCardBehind: {
+    zIndex: -1,
+  },
   cardContent: {
     position: 'absolute',
     top: 2,
@@ -770,9 +902,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 10, 14, 0.98)',
     borderRadius: theme.borderRadius.xl - 2,
   },
-  // Chart section (larger portion of card)
+  // Chart section (larger portion of card - 80%)
   chartSection: {
-    flex: 3,
+    flex: 4,
     minHeight: 0,
     position: 'relative',
     borderBottomWidth: 1,
@@ -782,14 +914,14 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
   },
-  // Bottom section - text and buttons
+  // Bottom section - text and buttons (20%)
   bottomSection: {
-    flex: 2,
+    flex: 1,
     minHeight: 0,
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.xl,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.sm,
     gap: theme.spacing.md,
   },
   // Scenario (left side)
@@ -860,34 +992,6 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.textTertiary,
-  },
-  // Result overlay on solution chart
-  resultOverlay: {
-    position: 'absolute',
-    top: theme.spacing.md,
-    right: theme.spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-  },
-  resultOverlayCorrect: {
-    backgroundColor: theme.colors.successMuted,
-  },
-  resultOverlayIncorrect: {
-    backgroundColor: theme.colors.errorMuted,
-  },
-  resultOverlayText: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-  },
-  xpText: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.accent,
-    marginLeft: theme.spacing.xs,
   },
   // Analysis section (solution back)
   analysisContainer: {
