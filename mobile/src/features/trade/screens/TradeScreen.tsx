@@ -10,13 +10,15 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassPanel } from '@ui/primitives/GlassPanel';
+import { GlowingBorder } from '@ui/primitives/GlowingBorder';
 import { Button } from '@ui/primitives/Button';
 import { theme } from '@app/theme';
 import { useTradeStore } from '@app/store';
-import { mockTradePairs, mockThemes, TradeTheme, TradePair } from '../models';
+import { mockTradePairs, mockThemes, availableAssets, basketThemes, AvailableAsset } from '../models';
 import { TradingViewChart } from '../components/TradingViewChart';
 import { TradeService } from '../services/TradeService';
 
@@ -30,12 +32,16 @@ export const TradeScreen: React.FC = () => {
     orderType,
     amount,
     side,
+    selectedLongAsset,
+    selectedShortAsset,
     setSelectedTheme,
     setSelectedPair,
     setTradeType,
     setOrderType,
     setAmount,
     setSide,
+    setSelectedLongAsset,
+    setSelectedShortAsset,
   } = useTradeStore();
 
   const [showChart, setShowChart] = useState(false);
@@ -43,6 +49,7 @@ export const TradeScreen: React.FC = () => {
   const [showInfo, setShowInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAssetSelector, setShowAssetSelector] = useState<'long' | 'short' | null>(null);
 
   const handlePlaceTrade = async () => {
     if (!canPlaceTrade() || isSubmitting) return;
@@ -52,14 +59,46 @@ export const TradeScreen: React.FC = () => {
 
     try {
       // Build trade order
-      const order = {
-        type: tradeType === 'theme' ? 'theme' : 'single',
-        theme: tradeType === 'theme' ? selectedTheme : undefined,
-        pair: tradeType === 'single' ? selectedPair : undefined,
-        side,
-        orderType,
-        amount: parseFloat(amount),
-      };
+      let order;
+      if (tradeType === 'pair' && selectedLongAsset && selectedShortAsset) {
+        // Create a theme-like object for pair trade
+        order = {
+          type: 'pair',
+          theme: {
+            id: `${selectedLongAsset}-vs-${selectedShortAsset}`,
+            name: `${selectedLongAsset} vs ${selectedShortAsset}`,
+            description: `Long ${selectedLongAsset}, Short ${selectedShortAsset}`,
+            icon: '⚖️',
+            tokens: [selectedLongAsset, selectedShortAsset],
+            change24h: 0,
+            type: 'pair',
+            longAsset: selectedLongAsset,
+            shortAsset: selectedShortAsset,
+          },
+          pair: undefined,
+          side: 'long', // Pairs are always long one, short the other
+          orderType,
+          amount: parseFloat(amount),
+        };
+      } else if (tradeType === 'basket' && selectedTheme) {
+        order = {
+          type: 'theme',
+          theme: selectedTheme,
+          pair: undefined,
+          side,
+          orderType,
+          amount: parseFloat(amount),
+        };
+      } else {
+        order = {
+          type: tradeType === 'single' ? 'single' : 'pair',
+          theme: tradeType === 'pair' ? selectedTheme : undefined,
+          pair: tradeType === 'single' ? selectedPair : undefined,
+          side,
+          orderType,
+          amount: parseFloat(amount),
+        };
+      }
 
       // Submit to Pear Execution API
       const response = await TradeService.submitOrder(order);
@@ -101,32 +140,36 @@ export const TradeScreen: React.FC = () => {
   };
 
   const getTradeDescription = () => {
-    if (tradeType === 'theme' && selectedTheme) {
-      if (selectedTheme.type === 'pair') {
-        return `Bet on ${selectedTheme.longAsset} going up vs ${selectedTheme.shortAsset} going down`;
-      }
+    if (tradeType === 'pair' && selectedLongAsset && selectedShortAsset) {
+      return `Trade ${selectedLongAsset} going up vs ${selectedShortAsset} going down`;
+    }
+    if (tradeType === 'basket' && selectedTheme) {
       return side === 'long'
-        ? `Bet on ${selectedTheme.name} going up`
-        : `Bet on ${selectedTheme.name} going down`;
+        ? `Long ${selectedTheme.name} basket`
+        : `Short ${selectedTheme.name} basket`;
     }
     if (tradeType === 'single' && selectedPair) {
       return side === 'long'
-        ? `Bet on ${selectedPair.displayName} going up`
-        : `Bet on ${selectedPair.displayName} going down`;
+        ? `Long ${selectedPair.displayName}`
+        : `Short ${selectedPair.displayName}`;
     }
-    return 'Select what you want to bet on';
+    return 'Select what you want to trade';
   };
 
   const canPlaceTrade = () => {
     if (!amount || parseFloat(amount) <= 0) return false;
-    if (tradeType === 'theme' && !selectedTheme) return false;
+    if (tradeType === 'pair' && (!selectedLongAsset || !selectedShortAsset)) return false;
+    if (tradeType === 'basket' && !selectedTheme) return false;
     if (tradeType === 'single' && !selectedPair) return false;
     return true;
   };
 
-  const getSelectedSymbol = () => {
-    if (tradeType === 'theme' && selectedTheme) {
-      return selectedTheme.tokens[0] || 'BTCUSD';
+  const getSelectedSymbol = (asset?: string) => {
+    if (asset) {
+      return `${asset}USD`;
+    }
+    if (tradeType === 'pair' && selectedLongAsset) {
+      return `${selectedLongAsset}USD`;
     }
     if (tradeType === 'single' && selectedPair) {
       return selectedPair.symbol;
@@ -172,17 +215,68 @@ export const TradeScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+    <View style={styles.container}>
+      {/* Orange Flowing Gradient Background */}
+      <LinearGradient
+        colors={[
+          '#0A0500', // Deep near-black
+          '#1A0F00', // Dark charcoal with orange hint
+          '#2A1505', // Dark orange-brown
+          '#1A0F00', // Back to charcoal
+          '#0F0800', // Deep navy-orange blend
+        ]}
+        locations={[0, 0.3, 0.5, 0.7, 1]}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      
+      {/* Flowing orange gradient layer */}
+      <LinearGradient
+        colors={[
+          'rgba(255, 107, 53, 0.15)', // Vibrant orange-red
+          'rgba(255, 140, 60, 0.08)', // Bright orange
+          'transparent',
+          'rgba(255, 179, 71, 0.12)', // Yellow-orange
+          'rgba(255, 107, 53, 0.10)', // Back to orange-red
+        ]}
+        locations={[0, 0.25, 0.5, 0.75, 1]}
+        start={{ x: 0.3, y: 0.2 }}
+        end={{ x: 0.7, y: 0.8 }}
+        style={StyleSheet.absoluteFill}
+      />
+      
+      {/* Additional flowing layer for depth */}
+      <LinearGradient
+        colors={[
+          'transparent',
+          'rgba(255, 69, 0, 0.08)', // Red-orange
+          'rgba(255, 140, 60, 0.06)', // Orange
+          'transparent',
+        ]}
+        locations={[0, 0.4, 0.6, 1]}
+        start={{ x: 0.7, y: 0.3 }}
+        end={{ x: 0.3, y: 0.9 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Place Your Bet</Text>
-            <Text style={styles.subtitle}>Trade themes, not just tokens</Text>
+            <Text style={styles.title}>New Trade</Text>
+            <Text style={styles.subtitle}>
+              {tradeType === 'pair' 
+                ? 'Long one asset, short another'
+                : tradeType === 'basket'
+                ? 'Trade groups of tokens'
+                : 'Trade individual tokens'}
+            </Text>
           </View>
           <GlassPanel style={styles.balanceChip}>
             <Text style={styles.balanceLabel}>Balance</Text>
@@ -194,105 +288,269 @@ export const TradeScreen: React.FC = () => {
         <View style={styles.tradeTypeRow}>
           <Pressable
             onPress={() => {
-              setTradeType('theme');
+              setTradeType('pair');
               setSelectedPair(null);
+              setSelectedTheme(null);
+              setSelectedLongAsset(null);
+              setSelectedShortAsset(null);
             }}
-            style={[styles.tradeTypeButton, tradeType === 'theme' && styles.tradeTypeButtonActive]}
+            style={[styles.tradeTypeButton, tradeType === 'pair' && styles.tradeTypeButtonActive]}
           >
+            <Ionicons
+              name="swap-horizontal"
+              size={18}
+              color={tradeType === 'pair' ? '#FF6B35' : 'rgba(255, 255, 255, 0.6)'}
+              style={styles.tradeTypeIcon}
+            />
             <Text
               style={[
                 styles.tradeTypeText,
-                tradeType === 'theme' && styles.tradeTypeTextActive,
+                tradeType === 'pair' && styles.tradeTypeTextActive,
               ]}
             >
-              Themes
+              Pairs
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setTradeType('basket');
+              setSelectedPair(null);
+              setSelectedLongAsset(null);
+              setSelectedShortAsset(null);
+            }}
+            style={[styles.tradeTypeButton, tradeType === 'basket' && styles.tradeTypeButtonActive]}
+          >
+            <Ionicons
+              name="layers"
+              size={18}
+              color={tradeType === 'basket' ? '#FF6B35' : 'rgba(255, 255, 255, 0.6)'}
+              style={styles.tradeTypeIcon}
+            />
+            <Text
+              style={[
+                styles.tradeTypeText,
+                tradeType === 'basket' && styles.tradeTypeTextActive,
+              ]}
+            >
+              Baskets
             </Text>
           </Pressable>
           <Pressable
             onPress={() => {
               setTradeType('single');
               setSelectedTheme(null);
+              setSelectedLongAsset(null);
+              setSelectedShortAsset(null);
             }}
             style={[styles.tradeTypeButton, tradeType === 'single' && styles.tradeTypeButtonActive]}
           >
+            <Ionicons
+              name="diamond"
+              size={18}
+              color={tradeType === 'single' ? '#FF6B35' : 'rgba(255, 255, 255, 0.6)'}
+              style={styles.tradeTypeIcon}
+            />
             <Text
               style={[
                 styles.tradeTypeText,
                 tradeType === 'single' && styles.tradeTypeTextActive,
               ]}
             >
-              Single Token
+              Single
             </Text>
           </Pressable>
         </View>
 
-        {/* Theme/Narrative Selector */}
-        {tradeType === 'theme' && (
-          <GlassPanel style={styles.selectorPanel}>
-            <View style={styles.selectorHeader}>
-              <Text style={styles.sectionLabel}>Choose a Theme</Text>
-              <TouchableOpacity
-                onPress={() => setShowInfo('themes')}
-                style={styles.infoButton}
+        {/* Pair Selector - Choose Long and Short Assets */}
+        {tradeType === 'pair' && (
+          <>
+            <GlowingBorder
+              style={styles.selectorPanel}
+              glowColor="rgba(255, 255, 255, 0.2)"
+              disabled={false}
+              glow={false}
+              spread={8}
+              proximity={0}
+              inactiveZone={0.7}
+              movementDuration={2000}
+              borderWidth={0.15}
+            >
+              <View style={styles.selectorContent}>
+                <Text style={styles.sectionLabel}>Choose Your Pair</Text>
+                <Text style={styles.sectionHint}>
+                  Select which token to go long and which to short
+                </Text>
+
+                {/* Long Asset Selector */}
+                <View style={styles.assetSelectorRow}>
+                  <View style={styles.assetSelectorLabel}>
+                    <Text style={styles.assetSelectorTitle}>Long (Going Up)</Text>
+                    <Text style={styles.assetSelectorSubtitle}>Token you think will rise</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setShowAssetSelector('long')}
+                    style={[
+                      styles.assetButton,
+                      selectedLongAsset && styles.assetButtonSelected,
+                    ]}
+                  >
+                    <Text style={styles.assetButtonText}>
+                      {selectedLongAsset || 'Select Asset'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="rgba(255, 255, 255, 0.7)" />
+                  </Pressable>
+                </View>
+
+                {/* Short Asset Selector */}
+                <View style={styles.assetSelectorRow}>
+                  <View style={styles.assetSelectorLabel}>
+                    <Text style={styles.assetSelectorTitle}>Short (Going Down)</Text>
+                    <Text style={styles.assetSelectorSubtitle}>Token you think will fall</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setShowAssetSelector('short')}
+                    style={[
+                      styles.assetButton,
+                      selectedShortAsset && styles.assetButtonSelected,
+                    ]}
+                  >
+                    <Text style={styles.assetButtonText}>
+                      {selectedShortAsset || 'Select Asset'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="rgba(255, 255, 255, 0.7)" />
+                  </Pressable>
+                </View>
+              </View>
+            </GlowingBorder>
+
+            {/* Charts when both assets are selected */}
+            {selectedLongAsset && selectedShortAsset && (
+              <GlowingBorder
+                style={styles.chartsContainer}
+                glowColor="rgba(255, 255, 255, 0.2)"
+                disabled={false}
+                glow={false}
+                spread={8}
+                proximity={0}
+                inactiveZone={0.7}
+                movementDuration={2000}
+                borderWidth={0.15}
               >
-                <Ionicons name="information-circle-outline" size={20} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
+                <View style={styles.chartsContent}>
+                  <Text style={styles.chartsTitle}>Compare Performance</Text>
+                  <Text style={styles.chartsSubtitle}>
+                    Review both assets before placing your trade
+                  </Text>
+                  <View style={styles.chartsRow}>
+                    <View style={styles.chartWrapper}>
+                      <View style={styles.chartHeader}>
+                        <Text style={styles.chartLabel}>Long: {selectedLongAsset}</Text>
+                        <Text style={styles.chartLabelSubtext}>Going Up</Text>
+                      </View>
+                      <View style={styles.chartContainer}>
+                        <TradingViewChart symbol={getSelectedSymbol(selectedLongAsset)} interval="D" />
+                      </View>
+                    </View>
+                    <View style={styles.chartWrapper}>
+                      <View style={styles.chartHeader}>
+                        <Text style={styles.chartLabel}>Short: {selectedShortAsset}</Text>
+                        <Text style={styles.chartLabelSubtext}>Going Down</Text>
+                      </View>
+                      <View style={styles.chartContainer}>
+                        <TradingViewChart symbol={getSelectedSymbol(selectedShortAsset)} interval="D" />
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </GlowingBorder>
+            )}
+          </>
+        )}
+
+        {/* Basket Selector */}
+        {tradeType === 'basket' && (
+          <GlowingBorder
+            style={styles.selectorPanel}
+            glowColor="rgba(255, 255, 255, 0.2)"
+            disabled={false}
+            glow={false}
+            spread={8}
+            proximity={0}
+            inactiveZone={0.7}
+            movementDuration={2000}
+            borderWidth={0.15}
+          >
+            <View style={styles.selectorContent}>
+              <Text style={styles.sectionLabel}>Choose a Basket</Text>
+              <Text style={styles.sectionHint}>
+                Trade groups of related tokens
+              </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.themeList}
+              contentContainerStyle={styles.themeListContent}
             >
-              {mockThemes.map((themeItem) => (
+              {basketThemes.map((basketTheme) => (
                 <Pressable
-                  key={themeItem.id}
-                  onPress={() => setSelectedTheme(themeItem)}
+                  key={basketTheme.id}
+                  onPress={() => setSelectedTheme(basketTheme)}
                   style={[
-                    styles.themeCard,
-                    selectedTheme?.id === themeItem.id && styles.themeCardActive,
+                    styles.pairCard,
+                    selectedTheme?.id === basketTheme.id && styles.pairCardActive,
                   ]}
                 >
-                  <Text style={styles.themeIcon}>{themeItem.icon}</Text>
+                  <Text style={styles.pairIcon}>{basketTheme.icon}</Text>
                   <Text
                     style={[
-                      styles.themeName,
-                      selectedTheme?.id === themeItem.id && styles.themeNameActive,
+                      styles.pairName,
+                      selectedTheme?.id === basketTheme.id && styles.pairNameActive,
                     ]}
                   >
-                    {themeItem.name}
+                    {basketTheme.name}
                   </Text>
-                  <Text style={styles.themeDescription}>{themeItem.description}</Text>
-                  <View style={styles.themeChange}>
+                  <Text style={styles.pairDescription}>{basketTheme.description}</Text>
+                  <View style={styles.pairChange}>
                     <Text
                       style={[
-                        styles.themeChangeText,
+                        styles.pairChangeText,
                         {
                           color:
-                            themeItem.change24h >= 0
+                            basketTheme.change24h >= 0
                               ? theme.colors.bullish
                               : theme.colors.bearish,
                         },
                       ]}
                     >
-                      {themeItem.change24h >= 0 ? '+' : ''}
-                      {themeItem.change24h}%
+                      {basketTheme.change24h >= 0 ? '+' : ''}
+                      {basketTheme.change24h}%
                     </Text>
                   </View>
-                  {themeItem.type === 'pair' && (
-                    <View style={styles.pairBadge}>
-                      <Text style={styles.pairBadgeText}>Pair Trade</Text>
-                    </View>
-                  )}
                 </Pressable>
               ))}
             </ScrollView>
-          </GlassPanel>
+            </View>
+          </GlowingBorder>
         )}
 
-        {/* Single Pair Selector */}
+        {/* Single Token Selector */}
         {tradeType === 'single' && (
-          <GlassPanel style={styles.selectorPanel}>
-            <Text style={styles.sectionLabel}>Choose a Token</Text>
+          <GlowingBorder
+            style={styles.selectorPanel}
+            glowColor="rgba(255, 255, 255, 0.2)"
+            disabled={false}
+            glow={false}
+            spread={8}
+            proximity={0}
+            inactiveZone={0.7}
+            movementDuration={2000}
+            borderWidth={0.15}
+          >
+            <View style={styles.selectorContent}>
+              <Text style={styles.sectionLabel}>Choose a Token</Text>
+              <Text style={styles.sectionHint}>
+                Trade a single token going up or down
+              </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -330,77 +588,69 @@ export const TradeScreen: React.FC = () => {
                 </Pressable>
               ))}
             </ScrollView>
-          </GlassPanel>
+            </View>
+          </GlowingBorder>
         )}
 
-        {/* Trade Description */}
-        {(selectedTheme || selectedPair) && (
-          <GlassPanel style={styles.descriptionPanel}>
+        {/* Trade Description - Simplified */}
+        {((tradeType === 'pair' && selectedLongAsset && selectedShortAsset) ||
+          (tradeType === 'basket' && selectedTheme) ||
+          (tradeType === 'single' && selectedPair)) && (
+          <View style={styles.descriptionPanel}>
             <Text style={styles.descriptionText}>{getTradeDescription()}</Text>
-          </GlassPanel>
-        )}
-
-        {/* Chart Toggle */}
-        {(selectedTheme || selectedPair) && (
-          <Pressable
-            onPress={() => setShowChart(!showChart)}
-            style={styles.chartToggle}
-          >
-            <Text style={styles.chartToggleText}>
-              {showChart ? 'Hide' : 'Show'} Chart
-            </Text>
-            <Ionicons
-              name={showChart ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color={theme.colors.textSecondary}
-            />
-          </Pressable>
-        )}
-
-        {/* Chart */}
-        {showChart && (selectedTheme || selectedPair) && (
-          <View style={styles.chartContainer}>
-            <TradingViewChart symbol={getSelectedSymbol()} interval="D" />
           </View>
         )}
 
         {/* Trade Ticket */}
-        <GlassPanel style={styles.tradeTicket}>
-          <Text style={styles.sectionLabel}>Your Bet</Text>
+        <GlowingBorder
+          style={styles.tradeTicket}
+          glowColor="rgba(255, 255, 255, 0.2)"
+          disabled={false}
+          glow={false}
+          spread={8}
+          proximity={0}
+          inactiveZone={0.7}
+          movementDuration={2000}
+          borderWidth={0.15}
+        >
+          <View style={styles.tradeTicketContent}>
+            <Text style={styles.sectionLabel}>Your Trade</Text>
 
-          {/* Long/Short Toggle */}
-          <View style={styles.sideToggle}>
-            <Pressable
-              onPress={() => setSide('long')}
-              style={[styles.sideButton, side === 'long' && styles.sideButtonLong]}
-            >
-              <Ionicons
-                name="trending-up"
-                size={20}
-                color={side === 'long' ? '#FFF' : theme.colors.textSecondary}
-              />
-              <Text
-                style={[styles.sideButtonText, side === 'long' && styles.sideButtonTextActive]}
+          {/* Long/Short Toggle - For Single and Basket */}
+          {(tradeType === 'single' || tradeType === 'basket') && (
+            <View style={styles.sideToggle}>
+              <Pressable
+                onPress={() => setSide('long')}
+                style={[styles.sideButton, side === 'long' && styles.sideButtonLong]}
               >
-                Bet Up
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setSide('short')}
-              style={[styles.sideButton, side === 'short' && styles.sideButtonShort]}
-            >
-              <Ionicons
-                name="trending-down"
-                size={20}
-                color={side === 'short' ? '#FFF' : theme.colors.textSecondary}
-              />
-              <Text
-                style={[styles.sideButtonText, side === 'short' && styles.sideButtonTextActive]}
+                <Ionicons
+                  name="trending-up"
+                  size={20}
+                  color={side === 'long' ? '#FFF' : 'rgba(255, 255, 255, 0.7)'}
+                />
+                <Text
+                  style={[styles.sideButtonText, side === 'long' && styles.sideButtonTextActive]}
+                >
+                  Go Long
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSide('short')}
+                style={[styles.sideButton, side === 'short' && styles.sideButtonShort]}
               >
-                Bet Down
-              </Text>
-            </Pressable>
-          </View>
+                <Ionicons
+                  name="trending-down"
+                  size={20}
+                  color={side === 'short' ? '#FFF' : 'rgba(255, 255, 255, 0.7)'}
+                />
+                <Text
+                  style={[styles.sideButtonText, side === 'short' && styles.sideButtonTextActive]}
+                >
+                  Go Short
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
           {/* Quick Amount Buttons */}
           <View style={styles.quickAmountRow}>
@@ -438,34 +688,16 @@ export const TradeScreen: React.FC = () => {
                 value={amount}
                 onChangeText={setAmount}
                 placeholder="0.00"
-                placeholderTextColor={theme.colors.textTertiary}
+                placeholderTextColor="rgba(255, 255, 255, 0.4)"
                 keyboardType="decimal-pad"
               />
             </View>
           </View>
 
-          {/* Order Type (Simplified - Market only for now) */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Order Type</Text>
-            <View style={styles.orderTypeRow}>
-              <Pressable
-                onPress={() => setOrderType('market')}
-                style={styles.orderTypeOption}
-              >
-                <View
-                  style={[styles.radio, orderType === 'market' && styles.radioActive]}
-                />
-                <Text style={styles.orderTypeText}>Market (Instant)</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.orderTypeHint}>
-              Market orders execute immediately at current price
-            </Text>
-          </View>
 
           {/* Place Trade Button */}
           <Button
-            variant={side === 'long' ? 'success' : 'error'}
+            variant={tradeType === 'pair' || side === 'long' ? 'success' : 'error'}
             onPress={handlePlaceTrade}
             fullWidth
             disabled={!canPlaceTrade() || isSubmitting}
@@ -474,25 +706,31 @@ export const TradeScreen: React.FC = () => {
           >
             {isSubmitting
               ? 'Placing Order...'
-              : `${side === 'long' ? '🚀 Bet Up' : '📉 Bet Down'} - $${amount || '0.00'}`}
+              : tradeType === 'pair'
+              ? `🚀 Place Pair Trade - $${amount || '0.00'}`
+              : tradeType === 'basket'
+              ? `${side === 'long' ? '🚀 Long Basket' : '📉 Short Basket'} - $${amount || '0.00'}`
+              : `${side === 'long' ? '🚀 Go Long' : '📉 Go Short'} - $${amount || '0.00'}`}
           </Button>
 
           {/* Risk Warning */}
           <View style={styles.riskWarning}>
             <Ionicons name="warning-outline" size={16} color={theme.colors.warning} />
             <Text style={styles.riskWarningText}>
-              Trading involves risk. Only bet what you can afford to lose.
+              Trading involves risk. Only trade what you can afford to lose.
             </Text>
           </View>
-        </GlassPanel>
-      </ScrollView>
+          </View>
+        </GlowingBorder>
+        </ScrollView>
+      </SafeAreaView>
 
       {/* Success Modal */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.modalOverlay}>
           <GlassPanel style={styles.successModal}>
             <Ionicons name="checkmark-circle" size={64} color={theme.colors.success} />
-            <Text style={styles.successText}>Bet Placed! 🎉</Text>
+            <Text style={styles.successText}>Trade Placed! 🎉</Text>
             <Text style={styles.successSubtext}>Your trade is being executed</Text>
           </GlassPanel>
         </Animated.View>
@@ -532,13 +770,9 @@ export const TradeScreen: React.FC = () => {
         >
           <Animated.View entering={FadeIn} exiting={FadeOut}>
             <GlassPanel style={styles.infoModal} onStartShouldSetResponder={() => true}>
-              <Text style={styles.infoTitle}>
-                {showInfo === 'themes' ? 'Trading Themes' : 'How It Works'}
-              </Text>
+              <Text style={styles.infoTitle}>How Pair Trading Works</Text>
               <Text style={styles.infoText}>
-                {showInfo === 'themes'
-                  ? 'Themes let you bet on groups of tokens or pairs. For example, "AI Tokens" lets you bet on multiple AI-related tokens at once. Pair trades let you bet on one token going up while another goes down.'
-                  : 'Choose a theme or token, pick whether you think it will go up or down, set your bet amount, and place your order. It\'s that simple!'}
+                Pair trading lets you trade one token going up while another goes down. For example, "ETH vs BTC" means you're trading ETH to outperform BTC. If ETH goes up more than BTC (or BTC goes down), you profit!
               </Text>
               <Button onPress={() => setShowInfo(null)} variant="primary" fullWidth>
                 Got it!
@@ -547,14 +781,80 @@ export const TradeScreen: React.FC = () => {
           </Animated.View>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+
+      {/* Asset Selector Modal */}
+      <Modal visible={showAssetSelector !== null} transparent animationType="slide">
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowAssetSelector(null)}
+        >
+          <Animated.View entering={FadeIn} exiting={FadeOut}>
+            <GlassPanel style={styles.assetModal} onStartShouldSetResponder={() => true}>
+              <View style={styles.assetModalHeader}>
+                <Text style={styles.assetModalTitle}>
+                  Select {showAssetSelector === 'long' ? 'Long' : 'Short'} Asset
+                </Text>
+                <Pressable onPress={() => setShowAssetSelector(null)}>
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
+                </Pressable>
+              </View>
+              <ScrollView style={styles.assetList}>
+                {availableAssets.map((asset) => (
+                  <Pressable
+                    key={asset.symbol}
+                    onPress={() => {
+                      if (showAssetSelector === 'long') {
+                        setSelectedLongAsset(asset.symbol);
+                      } else {
+                        setSelectedShortAsset(asset.symbol);
+                      }
+                      setShowAssetSelector(null);
+                    }}
+                    style={[
+                      styles.assetItem,
+                      ((showAssetSelector === 'long' && selectedLongAsset === asset.symbol) ||
+                       (showAssetSelector === 'short' && selectedShortAsset === asset.symbol)) &&
+                        styles.assetItemSelected,
+                    ]}
+                  >
+                    <View style={styles.assetItemContent}>
+                      <Text style={styles.assetItemSymbol}>{asset.symbol}</Text>
+                      <Text style={styles.assetItemName}>{asset.displayName}</Text>
+                    </View>
+                    {asset.change24h !== undefined && (
+                      <Text
+                        style={[
+                          styles.assetItemChange,
+                          {
+                            color:
+                              asset.change24h >= 0
+                                ? theme.colors.bullish
+                                : theme.colors.bearish,
+                          },
+                        ]}
+                      >
+                        {asset.change24h >= 0 ? '+' : ''}
+                        {asset.change24h}%
+                      </Text>
+                    )}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </GlassPanel>
+          </Animated.View>
+        </Pressable>
+      </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#000000',
+  },
+  safeArea: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -570,14 +870,16 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   title: {
-    fontSize: theme.typography.sizes.xxl,
+    fontSize: theme.typography.sizes.xxxl,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
     marginBottom: theme.spacing.xs,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontWeight: theme.typography.weights.regular,
   },
   balanceChip: {
     paddingHorizontal: theme.spacing.md,
@@ -599,29 +901,177 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.lg,
   },
-  tradeTypeButton: {
-    flex: 1,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    backgroundColor: theme.colors.glassBackground,
-    borderWidth: 1,
-    borderColor: theme.colors.glassBorder,
+  assetSelectorRow: {
+    marginBottom: theme.spacing.md,
   },
-  tradeTypeButtonActive: {
-    backgroundColor: theme.colors.accentMuted,
-    borderColor: theme.colors.accent,
+  assetSelectorLabel: {
+    marginBottom: theme.spacing.xs,
   },
-  tradeTypeText: {
+  assetSelectorTitle: {
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textSecondary,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.xs / 2,
+  },
+  assetSelectorSubtitle: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  assetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  assetButtonSelected: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
+  },
+  assetButtonText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.medium,
+    color: '#FFFFFF',
+  },
+  chartsContainer: {
+    padding: 2,
+    marginBottom: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+  },
+  chartsContent: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg - 2,
+  },
+  chartsTitle: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.xs,
+  },
+  chartsSubtitle: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginBottom: theme.spacing.md,
+  },
+  chartsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+  },
+  chartWrapper: {
+    flex: 1,
+  },
+  chartHeader: {
+    marginBottom: theme.spacing.sm,
+    alignItems: 'center',
+  },
+  chartLabel: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.xs / 2,
+  },
+  chartLabelSubtext: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  chartContainer: {
+    height: 180,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+  },
+  assetModal: {
+    width: '90%',
+    maxHeight: '80%',
+    padding: theme.spacing.lg,
+  },
+  assetModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+  },
+  assetModalTitle: {
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+  },
+  assetList: {
+    maxHeight: 400,
+  },
+  assetItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  assetItemSelected: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
+  },
+  assetItemContent: {
+    flex: 1,
+  },
+  assetItemSymbol: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.xs / 2,
+  },
+  assetItemName: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  assetItemChange: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+  },
+  tradeTypeButton: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xs,
+    borderRadius: theme.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.xs,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  tradeTypeButtonActive: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
+    borderWidth: 1.5,
+  },
+  tradeTypeIcon: {
+    marginRight: theme.spacing.xs / 2,
+  },
+  tradeTypeText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
   tradeTypeTextActive: {
-    color: theme.colors.accent,
+    color: '#FF6B35',
+    fontWeight: theme.typography.weights.semibold,
   },
   selectorPanel: {
+    padding: 2,
     marginBottom: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+  },
+  selectorContent: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg - 2,
   },
   selectorHeader: {
     flexDirection: 'row',
@@ -630,9 +1080,15 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   sectionLabel: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textPrimary,
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.xs,
+  },
+  sectionHint: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginBottom: theme.spacing.md,
   },
   infoButton: {
     padding: theme.spacing.xs,
@@ -640,58 +1096,52 @@ const styles = StyleSheet.create({
   themeList: {
     flexDirection: 'row',
   },
-  themeCard: {
-    width: 140,
-    padding: theme.spacing.md,
-    marginRight: theme.spacing.sm,
+  themeListContent: {
+    paddingRight: theme.spacing.md,
+  },
+  pairCard: {
+    width: 160,
+    padding: theme.spacing.lg,
+    marginRight: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.glassBackground,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: theme.colors.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  themeCardActive: {
-    backgroundColor: theme.colors.accentMuted,
-    borderColor: theme.colors.accent,
+  pairCardActive: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
+    borderWidth: 2,
   },
-  themeIcon: {
-    fontSize: 32,
-    marginBottom: theme.spacing.xs,
-  },
-  themeName: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.xs,
-    textAlign: 'center',
-  },
-  themeNameActive: {
-    color: theme.colors.accent,
-  },
-  themeDescription: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
+  pairIcon: {
+    fontSize: 36,
     marginBottom: theme.spacing.sm,
   },
-  themeChange: {
+  pairName: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.xs,
+    textAlign: 'center',
+  },
+  pairNameActive: {
+    color: '#FF6B35',
+  },
+  pairDescription: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    marginBottom: theme.spacing.md,
+    lineHeight: theme.typography.sizes.sm * 1.4,
+  },
+  pairChange: {
     marginTop: 'auto',
   },
-  themeChangeText: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-  },
-  pairBadge: {
-    marginTop: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.xs,
-    paddingVertical: 2,
-    borderRadius: theme.borderRadius.sm,
-    backgroundColor: theme.colors.accentMuted,
-  },
-  pairBadgeText: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.accent,
-    fontWeight: theme.typography.weights.medium,
+  pairChangeText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
   },
   pairList: {
     flexDirection: 'row',
@@ -701,56 +1151,49 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     marginRight: theme.spacing.sm,
     borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.glassBackground,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: theme.colors.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   pairChipActive: {
-    backgroundColor: theme.colors.accentMuted,
-    borderColor: theme.colors.accent,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
   },
   pairChipText: {
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.6)',
     marginBottom: theme.spacing.xs,
   },
   pairChipTextActive: {
-    color: theme.colors.accent,
+    color: '#FF6B35',
   },
   pairChange: {
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
   },
   descriptionPanel: {
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
     padding: theme.spacing.md,
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
   },
   descriptionText: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.textSecondary,
+    color: '#FFFFFF',
     textAlign: 'center',
-  },
-  chartToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: theme.spacing.sm,
-    marginBottom: theme.spacing.md,
-  },
-  chartToggleText: {
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.textSecondary,
-    marginRight: theme.spacing.xs,
-  },
-  chartContainer: {
-    height: 300,
-    marginBottom: theme.spacing.lg,
-    borderRadius: theme.borderRadius.lg,
-    overflow: 'hidden',
+    fontWeight: theme.typography.weights.medium,
   },
   tradeTicket: {
+    padding: 2,
     marginBottom: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+  },
+  tradeTicketContent: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg - 2,
   },
   sideToggle: {
     flexDirection: 'row',
@@ -765,9 +1208,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: theme.spacing.xs,
-    backgroundColor: theme.colors.glassBackground,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: theme.colors.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   sideButtonLong: {
     backgroundColor: theme.colors.success,
@@ -780,7 +1223,7 @@ const styles = StyleSheet.create({
   sideButtonText: {
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
   sideButtonTextActive: {
     color: '#FFFFFF',
@@ -798,21 +1241,21 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     borderRadius: theme.borderRadius.md,
     alignItems: 'center',
-    backgroundColor: theme.colors.glassBackground,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: theme.colors.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   quickAmountButtonActive: {
-    backgroundColor: theme.colors.accentMuted,
-    borderColor: theme.colors.accent,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: '#FF6B35',
   },
   quickAmountText: {
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
   quickAmountTextActive: {
-    color: theme.colors.accent,
+    color: '#FF6B35',
   },
   inputGroup: {
     marginBottom: theme.spacing.lg,
@@ -820,29 +1263,29 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.7)',
     marginBottom: theme.spacing.sm,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.backgroundElevated,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
-    borderColor: theme.colors.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   inputPrefix: {
     paddingLeft: theme.spacing.md,
     fontSize: theme.typography.sizes.lg,
     fontWeight: theme.typography.weights.medium,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
   },
   input: {
     flex: 1,
     padding: theme.spacing.md,
     fontSize: theme.typography.sizes.lg,
     fontWeight: theme.typography.weights.medium,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
   },
   orderTypeRow: {
     flexDirection: 'row',
@@ -859,19 +1302,19 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: theme.colors.glassBorder,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   radioActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.accent,
+    borderColor: '#FF6B35',
+    backgroundColor: '#FF6B35',
   },
   orderTypeText: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
   },
   orderTypeHint: {
     fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textTertiary,
+    color: 'rgba(255, 255, 255, 0.4)',
     marginTop: theme.spacing.xs,
   },
   riskWarning: {
@@ -904,12 +1347,12 @@ const styles = StyleSheet.create({
   successText: {
     fontSize: theme.typography.sizes.xl,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
     marginTop: theme.spacing.lg,
   },
   successSubtext: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.7)',
     marginTop: theme.spacing.sm,
     textAlign: 'center',
   },
@@ -922,13 +1365,13 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: theme.typography.sizes.xl,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
     marginTop: theme.spacing.lg,
     marginBottom: theme.spacing.md,
   },
   errorText: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.7)',
     lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.md,
     marginBottom: theme.spacing.lg,
     textAlign: 'center',
@@ -944,12 +1387,12 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: theme.typography.sizes.xl,
     fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textPrimary,
+    color: '#FFFFFF',
     marginBottom: theme.spacing.md,
   },
   infoText: {
     fontSize: theme.typography.sizes.md,
-    color: theme.colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.7)',
     lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.md,
     marginBottom: theme.spacing.lg,
   },

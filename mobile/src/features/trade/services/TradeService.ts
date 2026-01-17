@@ -124,13 +124,13 @@ class TradeServiceClass {
       if (order.type === 'single' && order.pair) {
         // Single spot order
         return await this.submitSpotOrder(order, accessToken);
-      } else if (order.type === 'theme') {
+      } else if (order.type === 'pair' || order.type === 'theme') {
         // Pair or basket trade (position)
         return await this.submitPosition(order, accessToken);
       } else {
         return {
           success: false,
-          error: 'Invalid order type. Must be single token or theme trade.',
+          error: 'Invalid order type. Must be single token or pair trade.',
         };
       }
     } catch (error) {
@@ -214,7 +214,7 @@ class TradeServiceClass {
    */
   private convertToPositionRequest(order: TradeOrder): PearPositionRequest {
     const isLong = order.side === 'long';
-    const isPairTrade = order.type === 'theme' && order.theme?.type === 'pair';
+    const isPairTrade = (order.type === 'pair' || order.type === 'theme') && order.theme?.type === 'pair';
     const isBasketTrade = order.type === 'theme' && order.theme?.type === 'basket';
 
     // Determine execution type based on order type and conditions
