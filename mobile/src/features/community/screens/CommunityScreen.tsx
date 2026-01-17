@@ -25,6 +25,7 @@ import {
   SocialPost,
 } from '../models';
 import { QRCodeModal } from '../components/QRCodeModal';
+import { Avatar } from '../components/Avatar';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
@@ -287,11 +288,11 @@ export const CommunityScreen: React.FC = () => {
                           <Text style={styles.rankText}>#{entry.rank}</Text>
                         </View>
                         <View style={styles.userCol}>
-                          <View style={styles.avatar}>
-                            <Text style={styles.avatarText}>
-                              {entry.username.substring(0, 2).toUpperCase()}
-                            </Text>
-                          </View>
+                          <Avatar
+                            userId={entry.userId}
+                            username={entry.username}
+                            size={32}
+                          />
                           <Text style={styles.username}>{entry.username}</Text>
                         </View>
                         <View style={styles.returnCol}>
@@ -381,11 +382,12 @@ export const CommunityScreen: React.FC = () => {
                           <Text style={styles.rankText}>#{entry.rank}</Text>
                         </View>
                         <View style={styles.userCol}>
-                          <View style={[styles.avatar, entry.userId === 'user-you' && styles.avatarYou]}>
-                            <Text style={styles.avatarText}>
-                              {entry.username.substring(0, 2).toUpperCase()}
-                            </Text>
-                          </View>
+                          <Avatar
+                            userId={entry.userId}
+                            username={entry.username}
+                            size={32}
+                            isYou={entry.userId === 'user-you'}
+                          />
                           <Text style={[styles.username, entry.userId === 'user-you' && styles.usernameYou]}>
                             {entry.username}
                           </Text>
@@ -499,11 +501,11 @@ export const CommunityScreen: React.FC = () => {
           {mockSocialPosts.map((post) => (
             <View key={post.id} style={styles.postCard}>
               <View style={styles.postHeader}>
-                <View style={styles.postAvatar}>
-                  <Text style={styles.postAvatarText}>
-                    {post.author.substring(0, 2).toUpperCase()}
-                  </Text>
-                </View>
+                <Avatar
+                  username={post.handle.replace('@', '')}
+                  size={40}
+                  style={styles.postAvatar}
+                />
                 <View style={styles.postMeta}>
                   <Text style={styles.postAuthor}>{post.author}</Text>
                   <Text style={styles.postHandle}>{post.handle} · {formatTimeAgo(post.timestamp)}</Text>
@@ -1110,15 +1112,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   postAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginRight: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   postAvatarText: {
     fontSize: theme.typography.sizes.sm,
