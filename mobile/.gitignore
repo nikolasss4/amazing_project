@@ -1,0 +1,141 @@
+# OSX
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace
+*.xcscmblueprint
+*.xccheckout
+ios/Pods/
+ios/.xcode.env.local
+
+# Android/IntelliJ
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.apk
+*.ap_
+*.aab
+.externalNativeBuild
+.cxx
+captures/
+.navigation/
+output.json
+google-services.json
+
+# node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log*
+.yarn-integrity
+.pnpm-debug.log*
+lerna-debug.log*
+
+# Package Managers
+.npm
+.eslintcache
+.node_repl_history
+*.tgz
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+expo-env.d.ts
+
+# Metro
+.metro-health-check*
+
+# Environment
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+.env*.local
+
+# Testing
+coverage/
+.nyc_output
+*.lcov
+.jest/
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Misc
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.cache
+Thumbs.db

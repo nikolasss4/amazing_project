@@ -1,0 +1,217 @@
+RiskLaba Mobile - Complete File Structure
+==========================================
+
+mobile/
+│
+├── 📱 App.tsx                                    # Main app entry point
+├── 📋 app.json                                   # Expo configuration
+├── 🔧 babel.config.js                            # Babel config (Reanimated plugin)
+├── 📦 package.json                               # Dependencies & scripts
+├── 🔧 tsconfig.json                              # TypeScript configuration
+├── 🚫 .gitignore                                 # Git ignore rules
+│
+├── 📚 Documentation
+│   ├── README.md                                 # Main documentation
+│   ├── ARCHITECTURE.md                           # Architecture deep dive
+│   ├── QUICKSTART.md                             # Quick setup guide
+│   └── PROJECT_STRUCTURE.txt                     # This file
+│
+├── 🎨 assets/                                    # Static assets (TODO)
+│   ├── icon.png                                  # App icon (1024x1024)
+│   ├── splash.png                                # Splash screen
+│   ├── adaptive-icon.png                         # Android adaptive icon
+│   └── favicon.png                               # Web favicon
+│
+└── 📂 src/                                       # Source code
+    │
+    ├── 🏢 app/                                   # App-level code
+    │   │
+    │   ├── 🧭 navigation/
+    │   │   ├── RootNavigator.tsx                 # Main nav setup (Bottom Tabs)
+    │   │   └── CustomTabBar.tsx                  # Telegram-style custom tab bar
+    │   │
+    │   ├── 🎨 theme/
+    │   │   ├── tokens.ts                         # Design tokens (colors, spacing, etc.)
+    │   │   └── index.ts                          # Theme exports
+    │   │
+    │   └── 💾 store/
+    │       └── index.ts                          # Zustand stores (Trade, Learn, Assistant)
+    │
+    ├── 🎯 features/                              # Feature modules
+    │   │
+    │   ├── 💹 trade/                             # Trading feature
+    │   │   ├── screens/
+    │   │   │   └── TradeScreen.tsx               # Main trading screen
+    │   │   ├── components/
+    │   │   │   └── TradingViewChart.tsx          # TradingView WebView chart
+    │   │   ├── models/
+    │   │   │   └── index.ts                      # TradePair, TradeOrder types + mock data
+    │   │   └── services/                         # (TODO: TradeService for API calls)
+    │   │
+    │   ├── 👥 community/                         # Social & leaderboard feature
+    │   │   ├── screens/
+    │   │   │   └── CommunityScreen.tsx           # Leaderboard, portfolios, feed
+    │   │   ├── components/                       # (Future: reusable components)
+    │   │   ├── models/
+    │   │   │   └── index.ts                      # Leaderboard, Portfolio, Post types + mock data
+    │   │   └── services/                         # (TODO: CommunityService for API calls)
+    │   │
+    │   ├── 🎓 learn/                             # Gamified learning feature
+    │   │   ├── screens/
+    │   │   │   └── LearnScreen.tsx               # Scenario cards with flip animation
+    │   │   ├── components/                       # (Future: ScenarioCard component)
+    │   │   ├── models/
+    │   │   │   └── index.ts                      # Scenario types + mock scenarios
+    │   │   └── services/                         # (TODO: LearnService for API calls)
+    │   │
+    │   └── 🤖 assistant/                         # AI Assistant feature
+    │       ├── components/
+    │       │   └── AssistantOverlay.tsx          # Chat overlay with screenshot
+    │       ├── services/
+    │       │   └── AssistantService.ts           # AI query service (mock + real API stub)
+    │       └── models/                           # (Message types defined in store)
+    │
+    └── 🎨 ui/                                    # Shared UI components
+        │
+        ├── index.ts                              # Convenience exports
+        │
+        ├── ⚛️ primitives/                        # Atomic components (building blocks)
+        │   ├── index.ts
+        │   ├── GlassPanel.tsx                    # Liquid glass container with blur
+        │   └── Button.tsx                        # Animated button (5 variants)
+        │
+        └── 🧩 components/                        # Composite components (molecules)
+            ├── index.ts
+            ├── Card.tsx                          # Pressable glass card
+            └── Pill.tsx                          # Tag/badge component (4 variants)
+
+
+Key File Purposes
+=================
+
+Configuration Files:
+- app.json: Expo settings (app name, icons, iOS/Android config)
+- tsconfig.json: TypeScript strict mode + path aliases
+- babel.config.js: Reanimated plugin for animations
+- package.json: Dependencies, scripts, project metadata
+
+App Entry:
+- App.tsx: Renders RootNavigator + AssistantOverlay, sets up gesture handler
+
+Navigation:
+- RootNavigator.tsx: Bottom tab navigator with 3 screens
+- CustomTabBar.tsx: Custom UI (left pill with 3 tabs, right pill with AI button)
+
+Theme:
+- tokens.ts: ALL design values (colors, spacing, typography, shadows, animations)
+  * Never hardcode values, always use tokens
+  * Enables consistent liquid glass aesthetic
+
+State Management:
+- store/index.ts: Zustand stores for Trade, Learn, and Assistant
+  * TradeStore: selected pair, order type, amount
+  * LearnStore: XP, streak, current scenario
+  * AssistantStore: messages, screenshot URI, isOpen state
+
+Features:
+Each feature follows same pattern:
+  - screens/: Full-page screens
+  - components/: Feature-specific reusable components
+  - models/: TypeScript types + mock data
+  - services/: API calls (TODO: replace mocks)
+
+UI Library:
+- primitives/: Base components (GlassPanel, Button)
+  * No business logic
+  * Highly reusable
+  * Accept style props
+- components/: Composite components (Card, Pill)
+  * Combine primitives
+  * Minimal logic
+  * Reusable across features
+
+
+Import Paths (TypeScript aliases)
+==================================
+
+@app/*        → src/app/*
+@features/*   → src/features/*
+@ui/*         → src/ui/*
+
+Example imports:
+import { theme } from '@app/theme';
+import { TradeScreen } from '@features/trade/screens/TradeScreen';
+import { GlassPanel, Button } from '@ui/primitives';
+import { Card, Pill } from '@ui/components';
+
+
+File Naming Conventions
+=======================
+
+Components:    PascalCase.tsx    (Button.tsx, GlassPanel.tsx)
+Screens:       PascalCase.tsx    (TradeScreen.tsx)
+Utilities:     camelCase.ts      (formatCurrency.ts)
+Types/Models:  index.ts          (models/index.ts exports types)
+Services:      PascalCase.ts     (AssistantService.ts)
+Config:        lowercase/kebab   (app.json, babel.config.js)
+
+
+TODO: Assets to Create
+=======================
+
+Create these files in assets/ directory:
+
+1. icon.png (1024x1024)
+   - App icon for iOS
+   - Dark background with RiskLaba logo
+   - Should work well on dark home screen
+
+2. splash.png (1284x2778 for iPhone 14 Pro Max)
+   - Launch screen
+   - Dark background with logo/brand
+   - Centered, minimal design
+
+3. adaptive-icon.png (1024x1024)
+   - Android adaptive icon
+   - Safe area in center for different shapes
+
+4. favicon.png (48x48)
+   - Web version icon
+
+For MVP, can use simple colored squares:
+- icon.png: Blue (#3B82F6) square with "RL" text
+- splash.png: Black background with blue "RiskLaba" text
+- Same for adaptive-icon.png and favicon.png
+
+
+Lines of Code Estimate
+=======================
+
+Configuration:       ~100 lines
+App Entry:           ~30 lines
+Navigation:          ~200 lines
+Theme:               ~150 lines
+Store:               ~120 lines
+Trade Feature:       ~600 lines
+Community Feature:   ~700 lines
+Learn Feature:       ~550 lines
+Assistant Feature:   ~450 lines
+UI Components:       ~500 lines
+Documentation:       ~1500 lines
+
+Total: ~4,900 lines (clean, well-structured code)
+
+
+Next Development Steps
+======================
+
+1. Create placeholder assets (icon.png, splash.png)
+2. Run npm install
+3. Test on iOS simulator
+4. Verify all screens work
+5. Create backend API (separate repo)
+6. Replace mock services with real API calls
+7. Add authentication
+8. Implement real trading logic
+9. Add error boundaries
+10. Add analytics & monitoring
