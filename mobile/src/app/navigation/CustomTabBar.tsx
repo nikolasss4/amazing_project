@@ -38,7 +38,7 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
       <Ionicons
         name={name}
         size={24}
-        color={focused ? '#60A5FA' : 'rgba(255, 255, 255, 0.5)'}
+        color={focused ? 'rgba(200, 210, 220, 0.9)' : 'rgba(255, 255, 255, 0.5)'}
       />
     </Animated.View>
   );
@@ -72,16 +72,22 @@ const TabButton: React.FC<TabButtonProps> = ({ iconName, focused, onPress }) => 
       onPressOut={handlePressOut}
       style={[styles.tab, animatedStyle]}
     >
-      {/* Glass button background */}
-      <BlurView intensity={focused ? 15 : 10} tint="dark" style={StyleSheet.absoluteFill} />
-      <LinearGradient
-        colors={
-          focused
-            ? ['rgba(96, 165, 250, 0.12)', 'rgba(59, 130, 246, 0.08)']
-            : ['rgba(255, 255, 255, 0.06)', 'rgba(255, 255, 255, 0.04)']
-        }
-        style={StyleSheet.absoluteFill}
-      />
+      {/* Glass button background - wrapped in View to clip to circle */}
+      <View style={styles.tabBackground}>
+        <BlurView 
+          intensity={focused ? 20 : 15} 
+          tint="dark" 
+          style={styles.tabBlurView}
+        />
+        <LinearGradient
+          colors={
+            focused
+              ? ['rgba(100, 110, 120, 0.18)', 'rgba(80, 90, 100, 0.15)']
+              : ['rgba(40, 45, 50, 0.25)', 'rgba(30, 35, 40, 0.22)']
+          }
+          style={styles.tabGradient}
+        />
+      </View>
       
       <TabIcon name={iconName} focused={focused} />
     </AnimatedPressable>
@@ -129,19 +135,19 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
       {/* Left pill - Main navigation tabs */}
       <View style={styles.leftPillWrapper}>
         {/* Frosted glass background */}
-        <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
         
-        {/* Gradient tint inside glass (deep navy → charcoal) */}
+        {/* Gradient tint inside glass (darker navy → charcoal) */}
         <LinearGradient
-          colors={['rgba(15, 23, 42, 0.12)', 'rgba(30, 41, 59, 0.10)', 'rgba(15, 23, 42, 0.12)']}
+          colors={['rgba(5, 8, 15, 0.25)', 'rgba(10, 15, 25, 0.22)', 'rgba(5, 8, 15, 0.25)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
         
-        {/* Inner highlight at top edge */}
+        {/* Inner highlight at top edge (very subtle) */}
         <LinearGradient
-          colors={['rgba(255, 255, 255, 0.08)', 'transparent']}
+          colors={['rgba(255, 255, 255, 0.03)', 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 0.3 }}
           style={StyleSheet.absoluteFill}
@@ -167,20 +173,26 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
 
       {/* Right circle - AI Assistant */}
       <View style={styles.assistantCircleWrapper}>
-        <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
-        <LinearGradient
-          colors={['rgba(15, 23, 42, 0.12)', 'rgba(30, 41, 59, 0.10)']}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={['rgba(255, 255, 255, 0.08)', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
+        <View style={styles.assistantBackground}>
+          <BlurView 
+            intensity={30} 
+            tint="dark" 
+            style={styles.assistantBlurView}
+          />
+          <LinearGradient
+            colors={['rgba(5, 8, 15, 0.25)', 'rgba(10, 15, 25, 0.22)']}
+            style={styles.assistantGradient1}
+          />
+          <LinearGradient
+            colors={['rgba(255, 255, 255, 0.03)', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 0.5 }}
+            style={styles.assistantGradient2}
+            pointerEvents="none"
+          />
+        </View>
         <AnimatedPressable onPress={handleAssistantPress} style={styles.assistantCircle}>
-          <Ionicons name="sparkles" size={24} color="#60A5FA" />
+          <Ionicons name="sparkles" size={24} color="rgba(200, 210, 220, 0.9)" />
         </AnimatedPressable>
       </View>
     </View>
@@ -204,7 +216,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
-    backgroundColor: 'rgba(15, 23, 42, 0.1)',
+    backgroundColor: 'rgba(5, 8, 15, 0.4)',
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -216,15 +228,78 @@ const styles = StyleSheet.create({
     borderRadius: 26, // Half of width/height for perfect circle
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
     position: 'relative',
+    overflow: 'hidden', // Clip all children to circle
+  },
+  tabBackground: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    overflow: 'hidden',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  tabBlurView: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  tabGradient: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   assistantCircleWrapper: {
     width: 56,
     height: 56,
     borderRadius: 28, // Half of width/height for perfect circle
+    backgroundColor: 'rgba(5, 8, 15, 0.4)',
+    position: 'relative',
+    overflow: 'hidden', // Clip all children to circle
+  },
+  assistantBackground: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     overflow: 'hidden',
-    backgroundColor: 'rgba(15, 23, 42, 0.1)',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  assistantBlurView: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  assistantGradient1: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  assistantGradient2: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   assistantCircle: {
     width: 56,
@@ -232,6 +307,6 @@ const styles = StyleSheet.create({
     borderRadius: 28, // Half of width/height for perfect circle
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(96, 165, 250, 0.1)',
+    backgroundColor: 'rgba(80, 90, 100, 0.2)',
   },
 });
