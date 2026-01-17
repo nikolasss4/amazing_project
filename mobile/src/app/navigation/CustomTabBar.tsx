@@ -58,7 +58,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
   const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
     Trade: 'trending-up',
     Community: 'people',
-    Learn: 'school',
+    Improve: 'school',
   };
 
   const handleTabPress = (route: any, index: number) => {
