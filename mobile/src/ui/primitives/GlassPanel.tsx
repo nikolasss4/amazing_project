@@ -116,6 +116,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   overlay: {
+    flex: 1,
     borderWidth: 1,
     borderColor: theme.colors.glassBorder,
     borderRadius: theme.borderRadius.lg,

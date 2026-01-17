@@ -559,7 +559,9 @@ const styles = StyleSheet.create({
   },
   // Card
   cardContainer: {
-    flex: 1,
+    width: 360,
+    height: 580,
+    alignSelf: 'center',
     position: 'relative',
   },
   card: {
@@ -577,22 +579,29 @@ const styles = StyleSheet.create({
     padding: 0,
     overflow: 'hidden',
     flexDirection: 'column',
-  },
-  // Chart section (2/3 of card)
-  chartSection: {
-    flex: 2,
-    minHeight: 0,
     position: 'relative',
   },
-  // Bottom section (1/3 of card) - split left/right
+  // Chart section (larger portion of card)
+  chartSection: {
+    flex: 3,
+    minHeight: 0,
+    position: 'relative',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.glassBorder,
+    marginHorizontal: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+  },
+  // Bottom section - text and buttons
   bottomSection: {
-    flex: 1,
+    flex: 2,
     minHeight: 0,
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm,
-    gap: theme.spacing.sm,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.xl,
+    gap: theme.spacing.md,
   },
   // Scenario (left side)
   scenarioContainer: {
@@ -605,13 +614,12 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.textTertiary,
     letterSpacing: 1,
-    marginBottom: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
   },
   scenarioText: {
-    fontSize: 13,
-    lineHeight: 17,
+    fontSize: 14,
+    lineHeight: 20,
     color: theme.colors.textSecondary,
-    flex: 1,
   },
   // Actions (right side)
   actionsContainer: {
@@ -622,8 +630,8 @@ const styles = StyleSheet.create({
   // Skip button
   skipButton: {
     position: 'absolute',
-    bottom: theme.spacing.md,
-    right: theme.spacing.md,
+    bottom: theme.spacing.sm,
+    right: theme.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.xs,
@@ -673,13 +681,13 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.textTertiary,
     letterSpacing: 1,
-    marginBottom: 4,
+    marginBottom: theme.spacing.sm,
   },
   analysisText: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 14,
+    lineHeight: 20,
     color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
   },
   answerSummary: {
     gap: 4,

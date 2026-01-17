@@ -225,8 +225,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
-    borderTopLeftRadius: theme.borderRadius.lg,
-    borderTopRightRadius: theme.borderRadius.lg,
+    borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
   },
   header: {
