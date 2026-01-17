@@ -31,6 +31,42 @@ export interface SocialPost {
 }
 
 // Mock data
+// Mock friends leaderboard (subset of users + current user)
+export const mockFriendsLeaderboard: LeaderboardEntry[] = [
+  {
+    userId: 'user-you',
+    username: 'You',
+    rank: 1,
+    returnPercent: 15.8,
+    winRate: 72,
+    tradesCount: 45,
+  },
+  {
+    userId: 'user-1',
+    username: 'Alice',
+    rank: 3,
+    returnPercent: 12.4,
+    winRate: 68,
+    tradesCount: 89,
+  },
+  {
+    userId: 'user-4',
+    username: 'Charlie',
+    rank: 5,
+    returnPercent: 8.9,
+    winRate: 65,
+    tradesCount: 67,
+  },
+  {
+    userId: 'user-2',
+    username: 'Bob',
+    rank: 8,
+    returnPercent: 5.2,
+    winRate: 58,
+    tradesCount: 34,
+  },
+];
+
 export const mockLeaderboard: LeaderboardEntry[] = [
   {
     rank: 1,
