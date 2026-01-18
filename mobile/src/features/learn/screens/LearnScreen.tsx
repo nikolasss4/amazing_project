@@ -19,15 +19,7 @@ import { mockScenarios, Scenario } from '../models';
 type Answer = 'up' | 'down' | 'flat';
 
 export const LearnScreen: React.FC = () => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LearnScreen.tsx:22',message:'LearnScreen component mounted',data:{scenariosCount:mockScenarios.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-  // #endregion
-  
   const { totalXP, streak, addXP, incrementStreak } = useLearnStore();
-  
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LearnScreen.tsx:25',message:'LearnStore accessed',data:{totalXP,streak},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-  // #endregion
   
   const [currentScenarioIndex, setCurrentScenarioIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<Answer | null>(null);

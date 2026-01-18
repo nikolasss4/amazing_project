@@ -127,9 +127,6 @@ const CommunityScreenContent: React.FC = () => {
   }, [leaderboardPeriod]);
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:89',message:'narrativesData updated',data:{narrativesCount:narrativesData.length,loading:narrativesLoading,firstNarrativeTitle:narrativesData[0]?.title,firstReason:narrativesData[0]?.insights?.reason?.substring(0,60),hasGenericText:(narrativesData[0]?.insights?.reason||'').includes('Narrative formed from recent')},timestamp:Date.now(),sessionId:'debug-session',runId:'check-data-flow',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     // Always set narratives data - no userId check needed
     setLocalNarratives(narrativesData);
     if (!narrativesLoading) {
@@ -395,22 +392,12 @@ const CommunityScreenContent: React.FC = () => {
     // Use default userId if not set (same pattern as useCommunityData)
     const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:363',message:'handleSendRoomMessage called',data:{hasUserId:!!userId,effectiveUserId,hasSheetDataId:!!sheetData?.id,roomInputLength:roomInput.length,roomInputTrimmed:roomInput.trim().length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
     if (!sheetData?.id) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:368',message:'Early return - missing sheetData.id',data:{sheetDataId:sheetData?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       return;
     }
     
     const trimmed = roomInput.trim();
     if (!trimmed) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:376',message:'Early return - empty input',data:{roomInput,trimmed},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       return;
     }
 
@@ -426,23 +413,10 @@ const CommunityScreenContent: React.FC = () => {
         : '🧠 Insight: ';
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:393',message:'Calling postRoomMessage API',data:{effectiveUserId,sheetDataId:sheetData.id,messageText:`${prefix}${trimmed}`.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
-      
       const message = await CommunityService.postRoomMessage(effectiveUserId, sheetData.id, `${prefix}${trimmed}`);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:398',message:'postRoomMessage success',data:{messageId:message.id,messageText:message.text?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
-      
       setRoomMessages((prev) => [message, ...prev]);
       setRoomInput('');
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:404',message:'postRoomMessage error',data:{errorMessage:error.message,errorType:error.constructor.name},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
-      
       setRoomError(error.message || 'Failed to post message');
     }
   };
@@ -472,23 +446,10 @@ const CommunityScreenContent: React.FC = () => {
       return;
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:419',message:'handleDeleteRoomMessage called',data:{effectiveUserId,messageId,sheetDataId:sheetData.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-
     try {
       await CommunityService.deleteRoomMessage(effectiveUserId, sheetData.id, messageId);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:425',message:'deleteRoomMessage success',data:{messageId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      
       setRoomMessages((prev) => prev.filter((msg) => msg.id !== messageId));
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:430',message:'deleteRoomMessage error',data:{errorMessage:error.message,errorType:error.constructor.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-      
       setRoomError(error.message || 'Failed to delete message');
     }
   };
@@ -2449,4 +2410,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+// Export wrapped component with error boundary
+export const CommunityScreen: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <CommunityScreenContent />
+    </ErrorBoundary>
+  );
+};
 

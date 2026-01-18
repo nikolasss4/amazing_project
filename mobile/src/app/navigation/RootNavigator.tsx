@@ -15,10 +15,6 @@ export type RootTabParamList = {
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
 export const RootNavigator: React.FC = () => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RootNavigator.tsx:18',message:'RootNavigator rendered',data:{registeredScreens:['Trade','Community','Learn'],hasLearnScreen:true},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
-  
   return (
     <NavigationContainer>
       <Tab.Navigator
