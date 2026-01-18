@@ -138,11 +138,19 @@ class PearStopLossTakeProfit(BaseModel):
     value: float
 
 
+class PearLadderConfig(BaseModel):
+    """Ladder execution configuration."""
+    
+    ratioStart: float
+    ratioEnd: float
+    numberOfLevels: int
+
+
 class PearPositionRequest(BaseModel):
     """Request format for Pear Protocol position trades (pairs/baskets)."""
     
     slippage: float = Field(..., description="Slippage tolerance (0.01 = 1%)")
-    executionType: str = Field(..., description="Execution type")
+    executionType: str = Field(..., description="Execution type: SYNC, MARKET, TRIGGER, TWAP, LADDER, TP, SL, SPOT_MARKET, SPOT_LIMIT, SPOT_TWAP")
     leverage: float = Field(..., ge=1, le=100, description="Leverage (1-100)")
     usdValue: float = Field(..., gt=0, description="Total notional USD size")
     longAssets: list[PearAssetWeight] | None = None
@@ -155,8 +163,10 @@ class PearPositionRequest(BaseModel):
     twapDuration: int | None = None
     twapIntervalSeconds: int | None = None
     randomizeExecution: bool | None = None
+    ladderConfig: PearLadderConfig | None = None
     stopLoss: PearStopLossTakeProfit | None = None
     takeProfit: PearStopLossTakeProfit | None = None
+    referralCode: str | None = None
     walletAddress: str | None = Field(None, description="User's wallet address", alias="walletAddress")
     
     class Config:

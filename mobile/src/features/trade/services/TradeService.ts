@@ -97,6 +97,68 @@ export interface PearTradeResponse {
 }
 
 /**
+ * Asset position details from Pear Protocol
+ */
+export interface PearAssetPosition {
+  coin: string;
+  entryPrice: number;
+  actualSize: number;
+  leverage: number;
+  marginUsed: number;
+  positionValue: number;
+  unrealizedPnl: number;
+  entryPositionValue: number;
+  initialWeight: number;
+  fundingPaid: number;
+}
+
+/**
+ * Open position from Pear Protocol
+ */
+export interface PearOpenPosition {
+  positionId: string;
+  address: string;
+  pearExecutionFlag: string;
+  stopLoss?: {
+    type: string;
+    value: number;
+    isTrailing: boolean;
+    trailingDeltaValue?: number;
+    trailingActivationValue?: number;
+  } | null;
+  takeProfit?: {
+    type: string;
+    value: number;
+    isTrailing: boolean;
+    trailingDeltaValue?: number;
+    trailingActivationValue?: number;
+  } | null;
+  entryRatio: number;
+  markRatio: number;
+  entryPriceRatio: number;
+  markPriceRatio: number;
+  entryPositionValue: number;
+  positionValue: number;
+  marginUsed: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercentage: number;
+  longAssets: PearAssetPosition[];
+  shortAssets: PearAssetPosition[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Response from get open positions endpoint
+ */
+export interface GetOpenPositionsResponse {
+  success: boolean;
+  positions: PearOpenPosition[];
+  count: number;
+  error?: string;
+}
+
+/**
  * Multi-pair order leg format
  */
 export interface MultiPairLeg {
@@ -191,14 +253,20 @@ class TradeServiceClass {
     accessToken: string,
     walletAddress: string
   ): Promise<PearTradeResponse> {
-    const url = `${this.apiBaseUrl}/positions`;
+    // Build URL with authorization as query param so backend can forward to Pear API
+    const baseUrl = `${this.apiBaseUrl}/positions`;
+    const url = accessToken 
+      ? `${baseUrl}?authorization=${encodeURIComponent(accessToken)}`
+      : baseUrl;
     
     try {
       // Build long and short assets from legs
+      // For Pear Protocol pair trades, both longAssets AND shortAssets are required
       const longAssets: Array<{ asset: string; weight: number }> = [];
       const shortAssets: Array<{ asset: string; weight: number }> = [];
       
       for (const leg of order.legs) {
+        // Add actual trading assets (skip USDC as it will be added with weight 0)
         if (leg.longAsset !== 'USDC') {
           longAssets.push({ asset: leg.longAsset, weight: leg.weight / 100 });
         }
@@ -207,13 +275,27 @@ class TradeServiceClass {
         }
       }
 
+      // Always include USDC with minimal weight in both arrays
+      // This ensures both longAssets and shortAssets are never empty
+      longAssets.push({ asset: 'USDC', weight: 0.0001 });
+      shortAssets.push({ asset: 'USDC', weight: 0.0001 });
+
       const requestBody = {
         slippage: 0.01,
-        executionType: 'MARKET',
+        executionType: 'MARKET',  // Use MARKET for immediate execution
         leverage: 1,
         usdValue: order.amount,
-        longAssets: longAssets.length > 0 ? longAssets : undefined,
-        shortAssets: shortAssets.length > 0 ? shortAssets : undefined,
+        longAssets,
+        shortAssets,
+        // Default stopLoss and takeProfit at 100%
+        stopLoss: {
+          type: 'PERCENTAGE',
+          value: 100,
+        },
+        takeProfit: {
+          type: 'PERCENTAGE',
+          value: 100,
+        },
         walletAddress,
       };
 
@@ -221,14 +303,14 @@ class TradeServiceClass {
       console.log('MULTI-PAIR POSITION REQUEST');
       console.log('='.repeat(80));
       console.log('URL:', url);
+      console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
       console.log('Body:', JSON.stringify(requestBody, null, 2));
-      console.log('Making POST request...');
+      console.log('Making POST request to Pear Protocol via backend...');
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
         body: JSON.stringify(requestBody),
       });
@@ -254,7 +336,11 @@ class TradeServiceClass {
     accessToken: string,
     walletAddress: string
   ): Promise<PearTradeResponse> {
-    const url = `${this.apiBaseUrl}/orders/spot`;
+    // Build URL with authorization as query param so backend can forward to Pear API
+    const baseUrl = `${this.apiBaseUrl}/orders/spot`;
+    const url = accessToken 
+      ? `${baseUrl}?authorization=${encodeURIComponent(accessToken)}`
+      : baseUrl;
     
     try {
       // Convert to Pear API format
@@ -266,24 +352,26 @@ class TradeServiceClass {
         walletAddress, // Include wallet address
       };
 
-      console.log('\n📦 SPOT ORDER REQUEST');
-      console.log('📡 URL:', url);
-      console.log('📦 Body:', JSON.stringify(requestBody, null, 2));
-      console.log('⏳ Making POST request...');
+      console.log('\n' + '='.repeat(80));
+      console.log('SPOT ORDER REQUEST');
+      console.log('='.repeat(80));
+      console.log('URL:', url);
+      console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+      console.log('Body:', JSON.stringify(requestBody, null, 2));
+      console.log('Making POST request...');
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
         body: JSON.stringify(requestBody),
       });
 
-      console.log('📊 Response Status:', response.status);
+      console.log('Response Status:', response.status);
       return await this.handleApiResponse(response);
     } catch (error) {
-      console.error('❌ Spot order error:', error);
+      console.error('Spot order error:', error);
       console.log('='.repeat(80) + '\n');
       return {
         success: false,
@@ -301,7 +389,11 @@ class TradeServiceClass {
     accessToken: string,
     walletAddress: string
   ): Promise<PearTradeResponse> {
-    const url = `${this.apiBaseUrl}/positions`;
+    // Build URL with authorization as query param so backend can forward to Pear API
+    const baseUrl = `${this.apiBaseUrl}/positions`;
+    const url = accessToken 
+      ? `${baseUrl}?authorization=${encodeURIComponent(accessToken)}`
+      : baseUrl;
     
     try {
       // Convert to Pear API format
@@ -310,24 +402,26 @@ class TradeServiceClass {
         walletAddress, // Include wallet address
       };
 
-      console.log('\n📦 POSITION ORDER REQUEST');
-      console.log('📡 URL:', url);
-      console.log('📦 Body:', JSON.stringify(requestBody, null, 2));
-      console.log('⏳ Making POST request...');
+      console.log('\n' + '='.repeat(80));
+      console.log('POSITION ORDER REQUEST');
+      console.log('='.repeat(80));
+      console.log('URL:', url);
+      console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+      console.log('Body:', JSON.stringify(requestBody, null, 2));
+      console.log('Making POST request to Pear Protocol via backend...');
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
         body: JSON.stringify(requestBody),
       });
 
-      console.log('📊 Response Status:', response.status);
+      console.log('Response Status:', response.status);
       return await this.handleApiResponse(response);
     } catch (error) {
-      console.error('❌ Position trade error:', error);
+      console.error('Position trade error:', error);
       console.log('='.repeat(80) + '\n');
       return {
         success: false,
@@ -509,6 +603,69 @@ class TradeServiceClass {
     // This would fetch from Pear API
     // For now, return empty array (using mock data from models)
     return [];
+  }
+
+  /**
+   * Get open positions from Pear Protocol
+   * Calls backend which proxies to Pear Protocol API
+   */
+  async getOpenPositions(accessToken?: string): Promise<GetOpenPositionsResponse> {
+    console.log('\n' + '='.repeat(80));
+    console.log('FETCHING OPEN POSITIONS');
+    console.log('='.repeat(80));
+    console.log('Platform:', Platform.OS);
+    console.log('API Base URL:', this.apiBaseUrl);
+    console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+
+    try {
+      // Get access token from store if not provided
+      const token = accessToken || await this.getAccessToken();
+      
+      const url = `${this.apiBaseUrl}/positions/open${token ? `?authorization=${encodeURIComponent(token)}` : ''}`;
+      console.log('Request URL:', url);
+      console.log('Making GET request...');
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      console.log('Response Status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error Response:', errorText);
+        console.log('='.repeat(80) + '\n');
+        return {
+          success: false,
+          positions: [],
+          count: 0,
+          error: `Failed to fetch positions: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+      console.log('Response Data:', JSON.stringify(data, null, 2));
+      console.log('='.repeat(80) + '\n');
+
+      return {
+        success: data.success ?? true,
+        positions: data.positions ?? [],
+        count: data.count ?? 0,
+        error: data.error,
+      };
+    } catch (error) {
+      console.error('Failed to fetch open positions:', error);
+      console.log('='.repeat(80) + '\n');
+      return {
+        success: false,
+        positions: [],
+        count: 0,
+        error: error instanceof Error ? error.message : 'Failed to fetch positions',
+      };
+    }
   }
 }
 

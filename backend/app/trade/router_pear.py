@@ -583,22 +583,103 @@ async def close_pair_trade(
     return {"success": True}
 
 
+@router.get("/positions/open")
+async def get_open_positions(
+    authorization: str = Query(default=None, description="Bearer token for Pear API"),
+    service: PearServiceDep = None,
+) -> dict[str, Any]:
+    """
+    Get all open positions from Pear Protocol.
+    
+    This endpoint calls the Pear Protocol API to fetch all open positions
+    for the authenticated user.
+    
+    Args:
+        authorization: Bearer token from Pear Protocol authentication
+        
+    Returns:
+        List of open positions with PnL and asset details
+    """
+    import httpx
+    
+    logger.info("=" * 80)
+    logger.info("GET OPEN POSITIONS REQUEST")
+    logger.info("=" * 80)
+    logger.info(f"Authorization provided: {'Yes' if authorization else 'No'}")
+    
+    try:
+        # Call Pear Protocol API
+        pear_api_url = "https://hl-v2.pearprotocol.io/positions"
+        
+        headers = {
+            "Accept": "*/*",
+        }
+        
+        if authorization:
+            # Handle both "Bearer xxx" and just "xxx" formats
+            if authorization.startswith("Bearer "):
+                headers["Authorization"] = authorization
+            else:
+                headers["Authorization"] = f"Bearer {authorization}"
+        
+        logger.info(f"Calling Pear API: {pear_api_url}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(pear_api_url, headers=headers)
+            
+            logger.info(f"Pear API Response Status: {response.status_code}")
+            
+            if response.status_code == 200:
+                positions = response.json()
+                logger.info(f"Received {len(positions)} positions")
+                logger.info("=" * 80)
+                
+                return {
+                    "success": True,
+                    "positions": positions,
+                    "count": len(positions)
+                }
+            else:
+                error_text = response.text
+                logger.error(f"Pear API Error: {error_text}")
+                logger.info("=" * 80)
+                
+                return {
+                    "success": False,
+                    "positions": [],
+                    "count": 0,
+                    "error": f"Pear API returned {response.status_code}: {error_text}"
+                }
+                
+    except Exception as e:
+        logger.error(f"Failed to fetch positions: {str(e)}")
+        logger.info("=" * 80)
+        
+        return {
+            "success": False,
+            "positions": [],
+            "count": 0,
+            "error": str(e)
+        }
+
+
 @router.post("/positions")
 async def create_position_trade(
     request: PearPositionRequest,
-    service: PearServiceDep,
+    authorization: str = Query(default=None, description="Bearer token for Pear API"),
+    service: PearServiceDep = None,
 ) -> dict[str, Any]:
     """
     Create a position trade (pair or basket).
     
-    This endpoint accepts the full Pear Protocol position format
-    and logs the wallet address for tracking purposes.
+    This endpoint forwards the position request to Pear Protocol API
+    at https://hl-v2.pearprotocol.io/positions
     """
-    import uuid
+    import httpx
     from datetime import datetime
     
     logger.info("=" * 80)
-    logger.info("POSITION TRADE REQUEST RECEIVED")
+    logger.info("POSITION TRADE REQUEST - FORWARDING TO PEAR API")
     logger.info("=" * 80)
     logger.info(f"Wallet Address: {request.walletAddress}")
     logger.info(f"Execution Type: {request.executionType}")
@@ -607,27 +688,295 @@ async def create_position_trade(
     logger.info(f"Slippage: {request.slippage}")
     logger.info(f"Long Assets: {request.longAssets}")
     logger.info(f"Short Assets: {request.shortAssets}")
+    logger.info(f"Authorization provided: {'Yes' if authorization else 'No'}")
     logger.info("=" * 80)
     
-    # Generate a position ID for tracking
-    position_id = f"pos_{uuid.uuid4().hex[:12]}"
+    try:
+        import json
+        
+        # Build request body for Pear API with all required fields
+        pear_request_body = {
+            "slippage": request.slippage,
+            "executionType": request.executionType,
+            "leverage": request.leverage,
+            "usdValue": request.usdValue,
+        }
+        
+        # Add longAssets (required for position)
+        if request.longAssets:
+            pear_request_body["longAssets"] = [
+                {"asset": a.asset, "weight": a.weight} for a in request.longAssets
+            ]
+        
+        # Add shortAssets (required for position)
+        if request.shortAssets:
+            pear_request_body["shortAssets"] = [
+                {"asset": a.asset, "weight": a.weight} for a in request.shortAssets
+            ]
+        
+        # Add trigger configuration if present
+        if request.triggerValue:
+            pear_request_body["triggerValue"] = request.triggerValue
+        if request.triggerType:
+            pear_request_body["triggerType"] = request.triggerType
+        if request.direction:
+            pear_request_body["direction"] = request.direction
+        if request.assetName:
+            pear_request_body["assetName"] = request.assetName
+        
+        # Add market code for prediction markets
+        if request.marketCode:
+            pear_request_body["marketCode"] = request.marketCode
+        
+        # Add TWAP configuration if present
+        if request.twapDuration:
+            pear_request_body["twapDuration"] = request.twapDuration
+        if request.twapIntervalSeconds:
+            pear_request_body["twapIntervalSeconds"] = request.twapIntervalSeconds
+        if request.randomizeExecution is not None:
+            pear_request_body["randomizeExecution"] = request.randomizeExecution
+        
+        # Add ladder configuration if present
+        if request.ladderConfig:
+            pear_request_body["ladderConfig"] = {
+                "ratioStart": request.ladderConfig.ratioStart,
+                "ratioEnd": request.ladderConfig.ratioEnd,
+                "numberOfLevels": request.ladderConfig.numberOfLevels
+            }
+        
+        # Add stopLoss - use provided value or default to 100%
+        if request.stopLoss:
+            pear_request_body["stopLoss"] = {
+                "type": request.stopLoss.type,
+                "value": request.stopLoss.value
+            }
+        else:
+            # Default stopLoss: 100% (effectively no stop loss)
+            pear_request_body["stopLoss"] = {
+                "type": "PERCENTAGE",
+                "value": 100
+            }
+        
+        # Add takeProfit - use provided value or default to 100%
+        if request.takeProfit:
+            pear_request_body["takeProfit"] = {
+                "type": request.takeProfit.type,
+                "value": request.takeProfit.value
+            }
+        else:
+            # Default takeProfit: 100% (effectively no take profit)
+            pear_request_body["takeProfit"] = {
+                "type": "PERCENTAGE",
+                "value": 100
+            }
+        
+        # Add referral code if present
+        if request.referralCode:
+            pear_request_body["referralCode"] = request.referralCode
+        
+        # Serialize request body and calculate content length
+        request_body_json = json.dumps(pear_request_body)
+        content_length = len(request_body_json.encode('utf-8'))
+        
+        logger.info(f"Pear API Request Body: {json.dumps(pear_request_body, indent=2)}")
+        logger.info(f"Request Body Length: {content_length} bytes")
+        
+        # Call Pear Protocol API
+        pear_api_url = "https://hl-v2.pearprotocol.io/positions"
+        
+        # Build headers matching the exact format from Pear API docs
+        # POST /positions HTTP/1.1
+        # Host: hl-v2.pearprotocol.io
+        # Authorization: Bearer YOUR_SECRET_TOKEN
+        # Content-Type: application/json
+        # Accept: */*
+        # Content-Length: (calculated automatically by httpx)
+        headers = {
+            "Host": "hl-v2.pearprotocol.io",
+            "Accept": "*/*",
+        }
+        
+        # Add Authorization header (required)
+        if authorization:
+            if authorization.startswith("Bearer "):
+                headers["Authorization"] = authorization
+            else:
+                headers["Authorization"] = f"Bearer {authorization}"
+        else:
+            logger.warning("No authorization token provided - request may fail")
+        
+        logger.info(f"Calling Pear API: POST {pear_api_url}")
+        logger.info(f"Request Headers: {json.dumps(headers, indent=2)}")
+        logger.info(f"Calculated Content-Length: {content_length} bytes")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Use content= with explicit JSON string to have full control over the body
+            # httpx will automatically set Content-Type and Content-Length headers
+            response = await client.post(
+                pear_api_url,
+                content=request_body_json,
+                headers={
+                    **headers,
+                    "Content-Type": "application/json",
+                    "Content-Length": str(content_length),
+                }
+            )
+            
+            logger.info(f"Pear API Response Status: {response.status_code}")
+            logger.info(f"Pear API Response Headers: {dict(response.headers)}")
+            
+            # Try to parse response as JSON
+            try:
+                response_data = response.json()
+                logger.info(f"Pear API Response Body: {response_data}")
+            except Exception:
+                response_data = {"raw_response": response.text}
+                logger.info(f"Pear API Response Text: {response.text}")
+            
+            logger.info("=" * 80)
+            
+            if response.status_code == 200 or response.status_code == 201:
+                return {
+                    "success": True,
+                    "message": "Position created successfully",
+                    "walletAddress": request.walletAddress,
+                    "usdValue": request.usdValue,
+                    "pearResponse": response_data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Pear API returned {response.status_code}",
+                    "message": response_data.get("message") or response_data.get("error") or str(response_data),
+                    "walletAddress": request.walletAddress,
+                    "pearResponse": response_data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                
+    except httpx.TimeoutException:
+        logger.error("Pear API request timed out")
+        logger.info("=" * 80)
+        return {
+            "success": False,
+            "error": "Request to Pear API timed out",
+            "walletAddress": request.walletAddress,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to call Pear API: {str(e)}")
+        logger.info("=" * 80)
+        return {
+            "success": False,
+            "error": str(e),
+            "walletAddress": request.walletAddress,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+# ============================================================================
+# Test Endpoint - Exact Example Request
+# ============================================================================
+
+
+@router.post("/positions/test")
+async def test_position_trade(
+    authorization: str = Query(..., description="Bearer token for Pear API"),
+) -> dict[str, Any]:
+    """
+    Test endpoint that sends the exact example request from Pear API docs.
+    """
+    import httpx
+    import json
+    from datetime import datetime
     
-    # For now, return success response
-    # In production, this would forward to Pear Protocol API
-    response = {
-        "success": True,
-        "positionId": position_id,
-        "message": f"Trade submitted successfully! Amount: ${request.usdValue}",
-        "walletAddress": request.walletAddress,
-        "usdValue": request.usdValue,
-        "timestamp": datetime.utcnow().isoformat(),
+    logger.info("=" * 80)
+    logger.info("TEST POSITION TRADE - SENDING EXAMPLE REQUEST")
+    logger.info("=" * 80)
+    
+    # Exact example request from Pear API docs
+    pear_request_body = {
+        "slippage": 0.01,
+        "executionType": "MARKET",
+        "leverage": 10,
+        "usdValue": 10,
+        "longAssets": [
+            {"asset": "BTC", "weight": 0.6},
+            {"asset": "ETH", "weight": 0.4}
+        ],
+        "shortAssets": [
+            {"asset": "SOL", "weight": 0.7},
+            {"asset": "AVAX", "weight": 0.3}
+        ],
+        "stopLoss": {
+            "type": "PERCENTAGE",
+            "value": 15
+        },
+        "takeProfit": {
+            "type": "PERCENTAGE",
+            "value": 25
+        }
     }
     
-    logger.info("POSITION TRADE RESPONSE")
-    logger.info(f"Response: {response}")
-    logger.info("=" * 80)
-    
-    return response
+    try:
+        request_body_json = json.dumps(pear_request_body)
+        content_length = len(request_body_json.encode('utf-8'))
+        
+        logger.info(f"Request Body: {json.dumps(pear_request_body, indent=2)}")
+        logger.info(f"Content-Length: {content_length} bytes")
+        
+        pear_api_url = "https://hl-v2.pearprotocol.io/positions"
+        
+        headers = {
+            "Host": "hl-v2.pearprotocol.io",
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+            "Content-Length": str(content_length),
+        }
+        
+        if authorization.startswith("Bearer "):
+            headers["Authorization"] = authorization
+        else:
+            headers["Authorization"] = f"Bearer {authorization}"
+        
+        logger.info(f"Calling: POST {pear_api_url}")
+        logger.info(f"Headers: {json.dumps({k: v[:50] + '...' if k == 'Authorization' and len(v) > 50 else v for k, v in headers.items()}, indent=2)}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                pear_api_url,
+                content=request_body_json,
+                headers=headers
+            )
+            
+            logger.info(f"Response Status: {response.status_code}")
+            logger.info(f"Response Headers: {dict(response.headers)}")
+            
+            try:
+                response_data = response.json()
+                logger.info(f"Response Body: {json.dumps(response_data, indent=2)}")
+            except Exception:
+                response_data = {"raw_response": response.text}
+                logger.info(f"Response Text: {response.text}")
+            
+            logger.info("=" * 80)
+            
+            return {
+                "success": response.status_code in [200, 201],
+                "status_code": response.status_code,
+                "request_body": pear_request_body,
+                "response": response_data,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            
+    except Exception as e:
+        logger.error(f"Test request failed: {str(e)}")
+        logger.info("=" * 80)
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
 
 
 # ============================================================================

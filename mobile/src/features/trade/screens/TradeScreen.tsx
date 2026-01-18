@@ -7,7 +7,7 @@
  * - A weight allocation
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   TextInput,
   Modal,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +27,7 @@ import { GlowingBorder } from '@ui/primitives/GlowingBorder';
 import { Button } from '@ui/primitives/Button';
 import { theme } from '@app/theme';
 import { useTradeStore, useWalletStore } from '@app/store';
-import { TradeService } from '../services/TradeService';
+import { TradeService, PearOpenPosition } from '../services/TradeService';
 import { TradingViewChart } from '../components/TradingViewChart';
 
 const QUICK_AMOUNTS = [10, 50, 100, 500];
@@ -67,6 +68,11 @@ export const TradeScreen: React.FC = () => {
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
   const [expandedCharts, setExpandedCharts] = useState<Set<string>>(new Set());
 
+  // Open positions state
+  const [openPositions, setOpenPositions] = useState<PearOpenPosition[]>([]);
+  const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+  const [positionsError, setPositionsError] = useState<string | null>(null);
+
   // Toggle chart expansion for a trade
   const toggleChart = (tradeId: string) => {
     setExpandedCharts(prev => {
@@ -81,11 +87,42 @@ export const TradeScreen: React.FC = () => {
   };
 
   // Wallet state
-  const { isConnected, walletAddress, connect, disconnect, initialize } = useWalletStore();
+  const { isConnected, walletAddress, connect, disconnect, initialize, getAccessToken } = useWalletStore();
+
+  // Fetch open positions from Pear Protocol
+  const fetchOpenPositions = useCallback(async () => {
+    console.log('Fetching open positions...');
+    setIsLoadingPositions(true);
+    setPositionsError(null);
+    
+    try {
+      const accessToken = getAccessToken();
+      const response = await TradeService.getOpenPositions(accessToken || undefined);
+      
+      if (response.success) {
+        setOpenPositions(response.positions);
+        console.log(`Loaded ${response.positions.length} open positions`);
+      } else {
+        setPositionsError(response.error || 'Failed to load positions');
+        console.error('Failed to load positions:', response.error);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to load positions';
+      setPositionsError(errorMsg);
+      console.error('Error fetching positions:', error);
+    } finally {
+      setIsLoadingPositions(false);
+    }
+  }, [getAccessToken]);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Fetch positions on mount and when wallet connects
+  useEffect(() => {
+    fetchOpenPositions();
+  }, [fetchOpenPositions, isConnected]);
 
   const formatAddress = (address: string | null): string => {
     if (!address) return '';
@@ -227,6 +264,10 @@ export const TradeScreen: React.FC = () => {
         }
         setSuccessMessage(msg);
         setShowSuccess(true);
+        
+        // Refresh open positions after successful trade
+        fetchOpenPositions();
+        
         setTimeout(() => {
           setShowSuccess(false);
           setAmount('');
@@ -587,6 +628,143 @@ export const TradeScreen: React.FC = () => {
                   Trading involves risk. Only trade what you can afford to lose.
                 </Text>
               </View>
+            </View>
+          </GlowingBorder>
+
+          {/* Open Positions Section */}
+          <GlowingBorder
+            style={styles.positionsPanel}
+            glowColor="rgba(255, 255, 255, 0.2)"
+            disabled={false}
+            glow={false}
+            spread={8}
+            proximity={0}
+            inactiveZone={0.7}
+            movementDuration={2000}
+            borderWidth={0.15}
+          >
+            <View style={styles.positionsPanelContent}>
+              <View style={styles.positionsHeader}>
+                <Text style={styles.sectionLabel}>Open Positions</Text>
+                <Pressable onPress={fetchOpenPositions} style={styles.refreshButton}>
+                  {isLoadingPositions ? (
+                    <ActivityIndicator size="small" color="#FF6B35" />
+                  ) : (
+                    <Ionicons name="refresh" size={20} color="#FF6B35" />
+                  )}
+                </Pressable>
+              </View>
+
+              {/* Loading State */}
+              {isLoadingPositions && openPositions.length === 0 && (
+                <View style={styles.positionsLoading}>
+                  <ActivityIndicator size="large" color="#FF6B35" />
+                  <Text style={styles.positionsLoadingText}>Loading positions...</Text>
+                </View>
+              )}
+
+              {/* Error State */}
+              {positionsError && !isLoadingPositions && (
+                <View style={styles.positionsError}>
+                  <Ionicons name="alert-circle" size={24} color={theme.colors.error} />
+                  <Text style={styles.positionsErrorText}>{positionsError}</Text>
+                  <Pressable onPress={fetchOpenPositions} style={styles.retryButton}>
+                    <Text style={styles.retryButtonText}>Retry</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* Empty State */}
+              {!isLoadingPositions && !positionsError && openPositions.length === 0 && (
+                <View style={styles.positionsEmpty}>
+                  <Ionicons name="layers-outline" size={48} color="rgba(255, 255, 255, 0.3)" />
+                  <Text style={styles.positionsEmptyText}>No open positions</Text>
+                  <Text style={styles.positionsEmptySubtext}>
+                    Place a bet above to open your first position
+                  </Text>
+                </View>
+              )}
+
+              {/* Positions List */}
+              {!isLoadingPositions && openPositions.length > 0 && (
+                <View style={styles.positionsList}>
+                  {openPositions.map((position) => {
+                    const isProfitable = position.unrealizedPnl >= 0;
+                    const pnlColor = isProfitable ? theme.colors.bullish : theme.colors.bearish;
+                    
+                    // Get asset names
+                    const longAssetNames = position.longAssets.map(a => a.coin).join(', ');
+                    const shortAssetNames = position.shortAssets.map(a => a.coin).join(', ');
+                    
+                    return (
+                      <View key={position.positionId} style={styles.positionCard}>
+                        {/* Position Header */}
+                        <View style={styles.positionHeader}>
+                          <View style={styles.positionAssets}>
+                            {longAssetNames && (
+                              <View style={styles.positionAssetTag}>
+                                <Ionicons name="arrow-up" size={12} color={theme.colors.bullish} />
+                                <Text style={styles.positionAssetTagText}>{longAssetNames}</Text>
+                              </View>
+                            )}
+                            {shortAssetNames && (
+                              <View style={[styles.positionAssetTag, styles.positionAssetTagShort]}>
+                                <Ionicons name="arrow-down" size={12} color={theme.colors.bearish} />
+                                <Text style={styles.positionAssetTagText}>{shortAssetNames}</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.positionId}>
+                            {position.positionId.substring(0, 8)}...
+                          </Text>
+                        </View>
+
+                        {/* Position Stats */}
+                        <View style={styles.positionStats}>
+                          <View style={styles.positionStat}>
+                            <Text style={styles.positionStatLabel}>Position Value</Text>
+                            <Text style={styles.positionStatValue}>
+                              ${position.positionValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                          </View>
+                          <View style={styles.positionStat}>
+                            <Text style={styles.positionStatLabel}>Entry Value</Text>
+                            <Text style={styles.positionStatValue}>
+                              ${position.entryPositionValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                          </View>
+                          <View style={styles.positionStat}>
+                            <Text style={styles.positionStatLabel}>Margin Used</Text>
+                            <Text style={styles.positionStatValue}>
+                              ${position.marginUsed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* PnL Row */}
+                        <View style={styles.positionPnlRow}>
+                          <Text style={styles.positionPnlLabel}>Unrealized PnL</Text>
+                          <View style={styles.positionPnlValues}>
+                            <Text style={[styles.positionPnlValue, { color: pnlColor }]}>
+                              {isProfitable ? '+' : ''}${position.unrealizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                            <Text style={[styles.positionPnlPercent, { color: pnlColor }]}>
+                              ({isProfitable ? '+' : ''}{(position.unrealizedPnlPercentage * 100).toFixed(2)}%)
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Position Footer */}
+                        <View style={styles.positionFooter}>
+                          <Text style={styles.positionDate}>
+                            Opened: {new Date(position.createdAt).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
           </GlowingBorder>
         </ScrollView>
@@ -1418,5 +1596,173 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.4)',
+  },
+
+  // Open Positions Styles
+  positionsPanel: {
+    padding: 2,
+    marginTop: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+  },
+  positionsPanelContent: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg - 2,
+  },
+  positionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  refreshButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+  },
+  positionsLoading: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  positionsLoadingText: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  positionsError: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 8,
+  },
+  positionsErrorText: {
+    fontSize: 14,
+    color: theme.colors.error,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF6B35',
+  },
+  positionsEmpty: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 8,
+  },
+  positionsEmptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  positionsEmptySubtext: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.3)',
+    textAlign: 'center',
+  },
+  positionsList: {
+    gap: 12,
+  },
+  positionCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  positionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  positionAssets: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  positionAssetTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  positionAssetTagShort: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  positionAssetTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  positionId: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontFamily: 'monospace',
+  },
+  positionStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  positionStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  positionStatLabel: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.4)',
+    marginBottom: 4,
+  },
+  positionStatValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  positionPnlRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  positionPnlLabel: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  positionPnlValues: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  positionPnlValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  positionPnlPercent: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  positionFooter: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  positionDate: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.3)',
   },
 });
