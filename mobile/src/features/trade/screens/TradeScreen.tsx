@@ -30,6 +30,7 @@ import { theme } from '@app/theme';
 import { useTradeStore, useWalletStore } from '@app/store';
 import { TradeService, PearOpenPosition } from '../services/TradeService';
 import { TradingViewChart } from '../components/TradingViewChart';
+import { Avatar } from '../../community/components/Avatar';
 
 const QUICK_AMOUNTS = [10, 50, 100, 500];
 const MAX_TRADES = 10;
@@ -484,9 +485,12 @@ export const TradeScreen: React.FC = () => {
           <View style={styles.header}>
             <View style={styles.profileWalletContainer}>
               {/* Profile Picture */}
-              <View style={styles.profilePicture}>
-                <Ionicons name="person" size={24} color="#FF6B35" />
-              </View>
+              <Avatar
+                userId="3"
+                username="TechBull"
+                size={48}
+                isYou={true}
+              />
               {/* Wallet Connection */}
               {isConnected ? (
                 <Pressable style={styles.walletButton} onPress={() => setShowWalletModal(true)}>
@@ -998,16 +1002,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-  },
-  profilePicture: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 107, 53, 0.15)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 107, 53, 0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   walletButton: {
     flexDirection: 'row',

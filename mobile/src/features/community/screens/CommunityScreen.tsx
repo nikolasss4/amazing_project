@@ -516,7 +516,8 @@ const CommunityScreenContent: React.FC = () => {
               <Avatar
                 userId="3"
                 username="TechBull"
-                size={32}
+                size={48}
+                isYou={true}
               />
               <Text style={styles.title}>Hey, @TechBull </Text>
             </View>
