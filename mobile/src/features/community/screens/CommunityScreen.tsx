@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator, Platform, Modal, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -9,102 +9,207 @@ import Animated, {
   interpolate,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { GlassPanel } from '@ui/primitives/GlassPanel';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlowingBorder } from '@ui/primitives/GlowingBorder';
-import { Pill } from '@ui/components/Pill';
 import { theme } from '@app/theme';
 import * as Haptics from 'expo-haptics';
-import { useLearnStore } from '@app/store';
-import {
-  mockLeaderboard,
-  mockFriendsLeaderboard,
-  mockCelebrityPortfolios,
-  mockSocialPosts,
-  LeaderboardEntry,
-  CelebrityPortfolio,
-  SocialPost,
-} from '../models';
+import { useLearnStore, useUserStore } from '@app/store';
+import { LeaderboardEntry } from '../models';
 import { QRCodeModal } from '../components/QRCodeModal';
+import { QRScannerModal } from '../components/QRScannerModal';
+import { CommunityService, MarketMessage, StanceType, StanceData } from '../services/CommunityService';
+import { CommunityNarrative, useNarratives } from '../hooks/useCommunityData';
+import { ErrorBoundary } from '@ui/components/ErrorBoundary';
 import { Avatar } from '../components/Avatar';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
 
-// Deterministic shuffle function based on seed
+// Seeded leaderboard data - 7 users with avatars
+const SEEDED_LEADERBOARD_USERS: LeaderboardEntry[] = [
+  { rank: 1, userId: '1', username: 'CryptoKing', returnPercent: 142.5, winRate: 78, tradesCount: 45 },
+  { rank: 2, userId: '2', username: 'WallStreetBear', returnPercent: 128.3, winRate: 72, tradesCount: 52 },
+  { rank: 3, userId: '3', username: 'TechBull', returnPercent: 115.7, winRate: 68, tradesCount: 38 },
+  { rank: 4, userId: '4', username: 'DayTraderPro', returnPercent: 98.2, winRate: 65, tradesCount: 67 },
+  { rank: 5, userId: '5', username: 'SwingMaster', returnPercent: 87.4, winRate: 71, tradesCount: 29 },
+  { rank: 6, userId: '6', username: 'TradeGuru', returnPercent: 76.9, winRate: 63, tradesCount: 41 },
+  { rank: 7, userId: '7', username: 'MarketWhiz', returnPercent: 65.3, winRate: 69, tradesCount: 33 },
+];
+
+/**
+ * Seeded shuffle function - shuffles array deterministically based on seed
+ * Different periods will produce different orders
+ */
 function seededShuffle<T>(array: T[], seed: string): T[] {
-  // Simple seeded random number generator
-  let hash = 0;
+  const shuffled = [...array];
+  let seedValue = 0;
+  
+  // Create a numeric seed from the string
   for (let i = 0; i < seed.length; i++) {
-    const char = seed.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    seedValue = ((seedValue << 5) - seedValue) + seed.charCodeAt(i);
+    seedValue = seedValue & seedValue; // Convert to 32-bit integer
   }
   
-  const shuffled = [...array];
-  let random = Math.abs(hash);
-  
-  for (let i = shuffled.length - 1; i > 0; i--) {
+  // Simple seeded random number generator
+  let random = seedValue;
+  function seededRandom() {
     random = (random * 9301 + 49297) % 233280;
-    const j = Math.floor((random / 233280) * (i + 1));
+    return random / 233280;
+  }
+  
+  // Fisher-Yates shuffle with seeded random
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(seededRandom() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   
   return shuffled;
 }
 
-// Get shuffled leaderboard for a specific period
-function getShuffledLeaderboard(period: LeaderboardPeriod, baseData: LeaderboardEntry[]): LeaderboardEntry[] {
-  const shuffled = seededShuffle(baseData, `leaderboard-${period}`);
-  // Update ranks after shuffling
+/**
+ * Get shuffled leaderboard based on period
+ * Each period will have a different order
+ */
+function getShuffledLeaderboard(period: LeaderboardPeriod): LeaderboardEntry[] {
+  // Use period as seed to get consistent but different shuffles per period
+  const shuffled = seededShuffle(SEEDED_LEADERBOARD_USERS, period);
+  // Reassign ranks after shuffle
   return shuffled.map((entry, index) => ({
     ...entry,
     rank: index + 1,
   }));
 }
 
-export const CommunityScreen: React.FC = () => {
-  const { streak: storeStreak, totalXP: storeTotalXP } = useLearnStore();
+// Wrapper component to catch any errors during render
+const CommunityScreenContent: React.FC = () => {
+
+  const ToastAndroid = Platform.OS === 'android' ? require('react-native').ToastAndroid : null;
+  const { streak, totalXP } = useLearnStore();
+  const { userId, username, setUser } = useUserStore();
+
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
   const [isFlipped, setIsFlipped] = useState(false);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [activeSection, setActiveSection] = useState<CommunitySection>('leaderboard');
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [localNarratives, setLocalNarratives] = useState<CommunityNarrative[]>([]);
+  const [fadedNarratives, setFadedNarratives] = useState<Set<string>>(new Set());
+  const [lastNarrativesUpdatedAt, setLastNarrativesUpdatedAt] = useState<Date | null>(null);
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [sheetMode, setSheetMode] = useState<'crypto' | 'room' | null>(null);
+  const [sheetData, setSheetData] = useState<any>(null);
+  const [roomMessages, setRoomMessages] = useState<MarketMessage[]>([]);
+  const [roomLoading, setRoomLoading] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomInput, setRoomInput] = useState('');
+  const [roomMessageType, setRoomMessageType] = useState<'bull' | 'bear' | 'question' | 'insight' | 'source'>('insight');
+  const [stanceData, setStanceData] = useState<StanceData | null>(null);
+  const [stanceLoading, setStanceLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const flipRotation = useSharedValue(0);
-  
-  // Mock username - in real app, get from user store
-  const username = 'TechBull';
-  // Use mock values if store values are 0, otherwise use store values
-  const streak = storeStreak > 0 ? storeStreak : 42;
-  const totalXP = storeTotalXP > 0 ? storeTotalXP : 1250;
 
-  // Get shuffled leaderboard data based on selected period
-  const currentLeaderboard = useMemo(
-    () => getShuffledLeaderboard(leaderboardPeriod, mockLeaderboard),
-    [leaderboardPeriod]
-  );
+  const {
+    data: narrativesData,
+    loading: narrativesLoading,
+    error: narrativesError,
+    refetch: refetchNarratives,
+  } = useNarratives(undefined, 10, 60000); // Always fetch, use default userId in hook
 
-  const currentFriendsLeaderboard = useMemo(
-    () => getShuffledLeaderboard(leaderboardPeriod, mockFriendsLeaderboard),
-    [leaderboardPeriod]
-  );
+  // Seeded leaderboard - shuffled based on period
+  const safeGlobalLeaderboard = useMemo(() => {
+    return getShuffledLeaderboard(leaderboardPeriod);
+  }, [leaderboardPeriod]);
+
+  // Friends leaderboard - use same seeded data for now
+  const safeFriendsLeaderboard = useMemo(() => {
+    return getShuffledLeaderboard(leaderboardPeriod);
+  }, [leaderboardPeriod]);
+
+  useEffect(() => {
+    // Always set narratives data - no userId check needed
+    setLocalNarratives(narrativesData);
+    if (!narrativesLoading) {
+      const latestUpdated = narrativesData.reduce<Date | null>((latest, narrative) => {
+        const updatedAt = new Date(narrative.updated_at);
+        if (!latest || updatedAt > latest) {
+          return updatedAt;
+        }
+        return latest;
+      }, null);
+      setLastNarrativesUpdatedAt(latestUpdated ?? new Date());
+    }
+  }, [narrativesData, narrativesLoading]);
+
+  const fadedStorageKey = userId ? `community_faded_narratives_${userId}` : null;
+
+  useEffect(() => {
+    if (!fadedStorageKey) return;
+    let isMounted = true;
+    const loadFaded = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(fadedStorageKey);
+        if (!stored || !isMounted) return;
+        const parsed = JSON.parse(stored) as string[];
+        if (Array.isArray(parsed)) {
+          setFadedNarratives(new Set(parsed));
+        }
+      } catch (error) {
+        console.warn('Failed to load faded narratives', error);
+      }
+    };
+    loadFaded();
+    return () => {
+      isMounted = false;
+    };
+  }, [fadedStorageKey]);
+
+  useEffect(() => {
+    if (!fadedStorageKey) return;
+    const storeFaded = async () => {
+      try {
+        await AsyncStorage.setItem(fadedStorageKey, JSON.stringify(Array.from(fadedNarratives)));
+      } catch (error) {
+        console.warn('Failed to persist faded narratives', error);
+      }
+    };
+    storeFaded();
+  }, [fadedNarratives, fadedStorageKey]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handlePeriodSelect = (period: LeaderboardPeriod) => {
     setLeaderboardPeriod(period);
-    setShowFilterMenu(false);
   };
 
   const handleFlip = () => {
-    // Safe haptic call - no-op on web
     if (Platform.OS !== 'web') {
-      try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } catch (error) {
-        // Silently fail if haptics are not available
-      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     const newIsFlipped = !isFlipped;
     setIsFlipped(newIsFlipped);
     flipRotation.value = withTiming(newIsFlipped ? 180 : 0, { duration: 600 });
+  };
+
+  const handleQRPress = () => {
+    // Haptics only work on native platforms
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    
+    // Show QR code directly without confirmation dialog
+    setShowQRModal(true);
+  };
+
+  const handleFriendAdded = async (friendId: string, username: string) => {
+    setShowQRScanner(false);
+    Alert.alert('Success', `Added ${username} as a friend!`);
   };
 
   const frontAnimatedStyle = useAnimatedStyle(() => {
@@ -130,23 +235,226 @@ export const CommunityScreen: React.FC = () => {
     };
   });
 
-  const formatTimeAgo = (date: Date) => {
-    const hours = Math.floor((Date.now() - date.getTime()) / 3600000);
-    if (hours < 1) return 'Just now';
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+  const formatTimestamp = (timestamp: Date | null) => {
+    return timestamp ? timestamp.toLocaleString() : '—';
   };
 
-  const getSentimentColor = (sentiment: SocialPost['sentiment']) => {
-    switch (sentiment) {
-      case 'bullish':
-        return theme.colors.bullish;
-      case 'bearish':
-        return theme.colors.bearish;
-      default:
-        return theme.colors.neutral;
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android' && ToastAndroid) {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+      return;
+    }
+    setToastMessage(message);
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 2500);
+  };
+
+  const NON_CRYPTO_TICKERS = new Set(['BRK', 'BRKA', 'BRKB', 'BRK.A', 'BRK.B', 'MSFT', 'TSLA']);
+
+  const isCryptoAsset = (asset: string) => {
+    const normalized = asset.replace('$', '').trim().toUpperCase();
+    if (!normalized) return false;
+    return !NON_CRYPTO_TICKERS.has(normalized);
+  };
+
+  const getVelocitySnapshot = (narrative: CommunityNarrative) => {
+    const { current, previous } = narrative.insights.change;
+    const delta = current - previous;
+    const percent =
+      previous === 0 ? (current > 0 ? 100 : 0) : Math.round((delta / previous) * 100);
+    return {
+      direction: percent >= 0 ? '↑' : '↓',
+      percent: Math.abs(percent),
+    };
+  };
+
+  const getConfidenceLabel = (level: CommunityNarrative['insights']['confidence']['level']) => {
+    return `${level[0].toUpperCase()}${level.slice(1)}`;
+  };
+
+  const getWhyLine = (text: string) => {
+    const trimmed = text.replace(/\s+/g, ' ').trim();
+    if (trimmed.length <= 120) return trimmed;
+    return `${trimmed.slice(0, 117)}...`;
+  };
+
+  const updateNarrative = (narrativeId: string, updater: (narrative: CommunityNarrative) => CommunityNarrative) => {
+    setLocalNarratives((prev) => prev.map((item) => (item.id === narrativeId ? updater(item) : item)));
+  };
+
+  const handleFollowNarrative = async (narrativeId: string) => {
+    if (!userId) return;
+    const snapshot = localNarratives.find((item) => item.id === narrativeId);
+    updateNarrative(narrativeId, (item) => ({ ...item, is_followed: true }));
+    try {
+      await CommunityService.followNarrative(userId, narrativeId);
+      await refetchNarratives();
+    } catch (error: any) {
+      if (snapshot) {
+        updateNarrative(narrativeId, () => snapshot);
+      }
+      showToast(error.message || 'Failed to follow narrative');
     }
   };
+
+  const handleFadeNarrative = async (narrativeId: string) => {
+    if (!userId) return;
+    const snapshot = localNarratives.find((item) => item.id === narrativeId);
+    setFadedNarratives((prev) => new Set([...prev, narrativeId]));
+    updateNarrative(narrativeId, (item) => ({ ...item, is_followed: false }));
+    try {
+      await CommunityService.fadeNarrative(userId, narrativeId);
+      await refetchNarratives();
+    } catch (error: any) {
+      if (snapshot) {
+        updateNarrative(narrativeId, () => snapshot);
+      }
+      setFadedNarratives((prev) => {
+        const next = new Set(prev);
+        next.delete(narrativeId);
+        return next;
+      });
+      showToast(error.message || 'Failed to fade narrative');
+    }
+  };
+
+  const cryptoNarratives = useMemo(() => {
+    return localNarratives.filter(
+      (narrative) =>
+        narrative.category === 'crypto' &&
+        narrative.assets.some(isCryptoAsset)
+    );
+  }, [localNarratives]);
+
+  const visibleNarratives = useMemo(() => {
+    return cryptoNarratives.filter((narrative) => !fadedNarratives.has(narrative.id));
+  }, [cryptoNarratives, fadedNarratives]);
+
+  const marketRooms = useMemo(() => {
+    return visibleNarratives.slice(0, 4).map((room) => ({
+      id: room.id,
+      title: room.title,
+      active: room.insights.change.current,
+      latest: room.insights.headlines[0]?.title || room.insights.reason,
+      headlines: room.insights.headlines,
+      sources: room.insights.sources,
+      narrative: room,
+    }));
+  }, [visibleNarratives]);
+
+  const openRoomSheet = (room: any) => {
+    setSheetMode('room');
+    setSheetData(room);
+    setSheetVisible(true);
+  };
+
+  useEffect(() => {
+    const fetchRoomMessages = async () => {
+      if (!sheetData?.id) return;
+      const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+      try {
+        setRoomLoading(true);
+        setRoomError(null);
+        const messages = await CommunityService.getRoomMessages(effectiveUserId, sheetData.id, 50);
+        setRoomMessages(messages);
+      } catch (error: any) {
+        setRoomError(error.message || 'Failed to load room messages');
+      } finally {
+        setRoomLoading(false);
+      }
+    };
+    const fetchStanceData = async () => {
+      if (!sheetData?.id) return;
+      const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+      try {
+        setStanceLoading(true);
+        const data = await CommunityService.getStance(effectiveUserId, sheetData.id);
+        setStanceData(data);
+      } catch (error: any) {
+        // Silently fail - stance is optional
+        setStanceData({ userStance: null, counts: { bullish: 0, bearish: 0, neutral: 0 } });
+      } finally {
+        setStanceLoading(false);
+      }
+    };
+
+    if (sheetVisible && sheetMode === 'room' && sheetData?.id) {
+      fetchRoomMessages();
+      fetchStanceData();
+    }
+  }, [sheetVisible, sheetMode, sheetData?.id, userId]);
+
+  const handleSendRoomMessage = async () => {
+    // Use default userId if not set (same pattern as useCommunityData)
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    if (!sheetData?.id) {
+      return;
+    }
+    
+    const trimmed = roomInput.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const prefix =
+      roomMessageType === 'bull'
+        ? '📈 Bull case: '
+        : roomMessageType === 'bear'
+        ? '📉 Bear case: '
+        : roomMessageType === 'question'
+        ? '❓ Question: '
+        : roomMessageType === 'source'
+        ? '🔗 Source: '
+        : '🧠 Insight: ';
+
+    try {
+      const message = await CommunityService.postRoomMessage(effectiveUserId, sheetData.id, `${prefix}${trimmed}`);
+      setRoomMessages((prev) => [message, ...prev]);
+      setRoomInput('');
+    } catch (error: any) {
+      setRoomError(error.message || 'Failed to post message');
+    }
+  };
+
+  const handleCastStance = async (stance: StanceType) => {
+    if (!sheetData?.id) return;
+    
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    try {
+      await CommunityService.castStance(effectiveUserId, sheetData.id, stance);
+      // Refetch stance data to update counts
+      const data = await CommunityService.getStance(effectiveUserId, sheetData.id);
+      setStanceData(data);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error: any) {
+      setRoomError(error.message || 'Failed to cast stance');
+      showToast(error.message || 'Failed to cast stance');
+    }
+  };
+
+  const handleDeleteRoomMessage = async (messageId: string) => {
+    // Use default userId if not set (same pattern as useCommunityData)
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    if (!sheetData?.id) {
+      return;
+    }
+
+    try {
+      await CommunityService.deleteRoomMessage(effectiveUserId, sheetData.id, messageId);
+      setRoomMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+    } catch (error: any) {
+      setRoomError(error.message || 'Failed to delete message');
+    }
+  };
+
+  const sheetVelocity = sheetMode === 'crypto' && sheetData ? getVelocitySnapshot(sheetData) : null;
 
   return (
     <View style={styles.container}>
@@ -207,17 +515,11 @@ export const CommunityScreen: React.FC = () => {
             <Text style={styles.title}>Community</Text>
             <Pressable
               onPress={() => {
-                // Safe haptic call - no-op on web
-                if (Platform.OS !== 'web') {
-                  try {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  } catch (error) {
-                    // Silently fail if haptics are not available
-                  }
-                }
-                setShowQRModal(true);
+                console.log('QR BUTTON PRESSED!');
+                handleQRPress();
               }}
               style={styles.qrButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Ionicons name="qr-code-outline" size={24} color={theme.colors.textSecondary} />
             </Pressable>
@@ -225,15 +527,17 @@ export const CommunityScreen: React.FC = () => {
 
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>Hey, @{username}</Text>
+          <Text style={styles.greetingText}>
+            Hey, @TechBull
+          </Text>
           <View style={styles.greetingStats}>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>🔥</Text>
-              <Text style={styles.statValue}>{streak}-day streak</Text>
+              <Text style={styles.statValue}>7-day streak</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>⚡</Text>
-              <Text style={styles.statValue}>{totalXP.toLocaleString()} pts</Text>
+              <Text style={styles.statValue}>55 pts</Text>
             </View>
           </View>
         </View>
@@ -329,44 +633,42 @@ export const CommunityScreen: React.FC = () => {
                   ))}
                 </View>
 
-                <ScrollView 
-                  style={styles.tableScrollView}
-                  contentContainerStyle={styles.tableScrollContent}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={styles.table}>
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
-                      <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
-                      <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
-                      <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
-                    </View>
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
+                    <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
+                    <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
+                    <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
+                  </View>
 
-                    {currentLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
+                  {safeGlobalLeaderboard.map((entry) => {
+                    if (!entry || !entry.userId) return null;
+                    const username = entry.username || 'Unknown';
+                    return (
+                      <View key={`${entry.userId}-${entry.rank}`} style={styles.tableRow}>
                         <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
+                          <Text style={styles.rankText}>#{entry.rank || 0}</Text>
                         </View>
                         <View style={styles.userCol}>
                           <Avatar
                             userId={entry.userId}
-                            username={entry.username}
+                            username={username}
                             size={32}
                           />
-                          <Text style={styles.username}>{entry.username}</Text>
+                          <Text style={styles.username}>{username}</Text>
                         </View>
                         <View style={styles.returnCol}>
                           <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
+                            +{entry.returnPercent?.toFixed(1) || 0}%
                           </Text>
                         </View>
                         <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
+                          <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
                         </View>
                       </View>
-                    ))}
-                  </View>
-                </ScrollView>
+                    );
+                  })}
+                </View>
               </View>
             </GlowingBorder>
           </Animated.View>
@@ -423,47 +725,46 @@ export const CommunityScreen: React.FC = () => {
                   ))}
                 </View>
 
-                <ScrollView 
-                  style={styles.tableScrollView}
-                  contentContainerStyle={styles.tableScrollContent}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={styles.table}>
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
-                      <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
-                      <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
-                      <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
-                    </View>
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
+                    <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
+                    <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
+                    <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
+                  </View>
 
-                    {currentFriendsLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
+                  {safeFriendsLeaderboard.map((entry) => {
+                    if (!entry || !entry.userId) return null;
+                    const username = entry.username || 'Unknown';
+                    const isCurrentUser = entry.userId === userId;
+                    return (
+                      <View key={`${entry.userId}-${entry.rank}`} style={styles.tableRow}>
                         <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
+                          <Text style={styles.rankText}>#{entry.rank || 0}</Text>
                         </View>
                         <View style={styles.userCol}>
                           <Avatar
                             userId={entry.userId}
-                            username={entry.username}
+                            username={username}
                             size={32}
-                            isYou={entry.userId === 'user-you'}
+                            isYou={isCurrentUser}
                           />
-                          <Text style={[styles.username, entry.userId === 'user-you' && styles.usernameYou]}>
-                            {entry.username}
+                          <Text style={[styles.username, isCurrentUser && styles.usernameYou]}>
+                            {username}
                           </Text>
                         </View>
                         <View style={styles.returnCol}>
                           <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
+                            +{entry.returnPercent?.toFixed(1) || 0}%
                           </Text>
                         </View>
                         <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
+                          <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
                         </View>
                       </View>
-                    ))}
-                  </View>
-                </ScrollView>
+                    );
+                  })}
+                </View>
               </View>
             </GlowingBorder>
           </Animated.View>
@@ -487,121 +788,170 @@ export const CommunityScreen: React.FC = () => {
         >
           <View style={styles.sectionContent}>
             <Text style={styles.sectionTitle}>Market Narratives</Text>
-            
-            {/* Main Narrative Signal Card */}
-            <View style={styles.narrativeCard}>
-              <View style={styles.narrativeHeader}>
-                <Text style={styles.narrativeTrending}>🔥 AI is trending on X</Text>
+            {narrativesLoading && (
+              <Text style={styles.loadingText}>Loading narratives...</Text>
+            )}
+            {narrativesError && !narrativesLoading && (
+              <View style={styles.emptyStateBlock}>
+                <Text style={styles.errorText}>Error: {narrativesError}</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Check that the backend is running on http://127.0.0.1:3000
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Make sure NEWSAPI_KEY and OPENAI_API_KEY are set in backend/.env
+                </Text>
               </View>
-              
-              <View style={styles.narrativeMetrics}>
-                <View style={styles.metricRow}>
-                  <Text style={styles.metricLabel}>Mentions:</Text>
-                  <Text style={styles.metricValue}>▲ +280% <Text style={styles.metricPeriod}>(24h)</Text></Text>
-                </View>
-                
-                <View style={styles.metricRow}>
-                  <Text style={styles.metricLabel}>Trigger:</Text>
-                  <Text style={styles.metricDescription}>Public comments by Elon Musk</Text>
-                </View>
-                
-                <View style={styles.metricRow}>
-                  <Text style={styles.metricLabel}>Market reaction:</Text>
-                  <Text style={styles.metricMarket}>AI basket +2.4%</Text>
-                </View>
+            )}
+            {!narrativesLoading && !narrativesError && cryptoNarratives.length === 0 && (
+              <View style={styles.emptyStateBlock}>
+                <Text style={styles.emptyStateText}>No active crypto narratives right now</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Last updated: {formatTimestamp(lastNarrativesUpdatedAt)}
+                </Text>
+                <Text style={[styles.emptyStateSubtext, { marginTop: theme.spacing.md, fontWeight: theme.typography.weights.semibold }]}>
+                  Setup Required:
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  1. Ensure backend is running: cd backend && npm run dev
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  2. Run setup script: cd backend && ./setup-community-data.sh
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  3. Or manually: seed sources → ingest news → build narratives
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  See COMMUNITY_DATA_SETUP.md for details
+                </Text>
               </View>
+            )}
+            {cryptoNarratives.map((narrative) => {
+              const isFaded = fadedNarratives.has(narrative.id);
 
-              {/* Timeline */}
-              <View style={styles.narrativeTimeline}>
-                <Text style={styles.timelineTitle}>Timeline</Text>
-                <View style={styles.timelineEvents}>
-                  <View style={styles.timelineEvent}>
-                    <Text style={styles.timelineTime}>09:12</Text>
-                    <Text style={styles.timelineDescription}>AI mentions spike</Text>
-                  </View>
-                  <View style={styles.timelineEvent}>
-                    <Text style={styles.timelineTime}>10:40</Text>
-                    <Text style={styles.timelineDescription}>Public figure comment</Text>
-                  </View>
-                  <View style={styles.timelineEvent}>
-                    <Text style={styles.timelineTime}>11:15</Text>
-                    <Text style={styles.timelineDescription}>Market reaction</Text>
+              return (
+                <View key={narrative.id}>
+                  {/* Narrative Title */}
+                  <Text style={styles.narrativePageTitle}>{narrative.title}</Text>
+                  
+                  <View
+                    style={[styles.narrativeCard, isFaded && styles.narrativeCardMuted]}
+                  >
+
+                  {/* Current Positions */}
+                  {narrative.assets.length > 0 && (() => {
+                    // Extract position values from reason text
+                    // Format: "223,341 $ETH($736M)" or "$ETH($65.4M)"
+                    const positionValues = new Map<string, string>();
+                    const reasonText = narrative.insights.reason;
+                    
+                    // Try to extract values like "$ETH($736M)" or "20,000 $ETH($65.4M)"
+                    narrative.assets.forEach((asset) => {
+                      const assetSymbol = asset.replace('$', '');
+                      // Escape special regex characters
+                      const escapedSymbol = assetSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      
+                      // Look for patterns like "$ETH($736M)" or "223,341 $ETH($736M)"
+                      // Pattern: (optional number) $SYMBOL($value)
+                      const pattern = new RegExp(`(?:\\d+[,\\d]*\\s+)?\\$${escapedSymbol}\\s*\\(([\\$\\d.]+[BMK]?)\\)`, 'gi');
+                      let match;
+                      let lastValue: string | null = null;
+                      
+                      // Find all matches (compatible with React Native)
+                      while ((match = pattern.exec(reasonText)) !== null) {
+                        if (match[1]) {
+                          lastValue = match[1];
+                        }
+                      }
+                      
+                      if (lastValue) {
+                        positionValues.set(asset, lastValue);
+                      }
+                    });
+                    
+                    return (
+                      <View style={styles.positionsSection}>
+                        <Text style={styles.sectionLabel}>Positions</Text>
+                        <View style={styles.positionsRow}>
+                          {narrative.assets.map((asset) => {
+                            const value = positionValues.get(asset);
+                            return (
+                              <View key={asset} style={styles.positionTag}>
+                                <Text style={styles.positionTagText}>
+                                  {asset}{value ? `: ${value}` : ''}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    );
+                  })()}
+
+                  {/* News Widget */}
+                  {narrative.insights.headlines && narrative.insights.headlines.length > 0 && (
+                    <View style={styles.headlinesSection}>
+                      <Text style={styles.sectionLabel}>News</Text>
+                      {narrative.insights.headlines.slice(0, 5).map((headline, index) => {
+                        // Remove "Current positions:" section from headline text
+                        let cleanedTitle = headline.title;
+                        // Remove everything from "Current positions:" (case insensitive) to the end
+                        const positionsPattern = /\n\s*Current\s+positions?:?\s*\n.*$/is;
+                        cleanedTitle = cleanedTitle.replace(positionsPattern, '').trim();
+                        
+                        return (
+                          <Pressable
+                            key={`${headline.url}-${index}`}
+                            onPress={() => headline.url && Linking.openURL(headline.url)}
+                            style={styles.headlineLink}
+                          >
+                            <Text style={styles.headlineText}>{cleanedTitle}</Text>
+                            <Ionicons name="open-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                   </View>
                 </View>
-              </View>
-
-              {/* CTAs */}
-              <View style={styles.narrativeCTAs}>
-                <Pressable style={styles.followButton}>
-                  <Text style={styles.followButtonText}>Follow narrative</Text>
-                </Pressable>
-                <Pressable style={styles.fadeButton}>
-                  <Text style={styles.fadeButtonText}>Fade narrative</Text>
-                </Pressable>
-              </View>
-            </View>
+              );
+            })}
           </View>
         </GlowingBorder>
 
-        {/* Social Feed */}
+        {/* Open Discussion Rooms */}
         <GlowingBorder
           style={styles.sectionContainer}
-            glowColor="rgba(255, 255, 255, 0.2)"
+          glowColor="rgba(255, 255, 255, 0.2)"
           disabled={false}
           glow={false}
           spread={8}
-          proximity={0}
+          proximity={0.7}
           inactiveZone={0.7}
           movementDuration={2000}
           borderWidth={0.15}
         >
           <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Social Feed</Text>
-
-          {mockSocialPosts.map((post) => (
-            <View key={post.id} style={styles.postCard}>
-              <View style={styles.postHeader}>
-                <Avatar
-                  username={post.handle.replace('@', '')}
-                  size={40}
-                  style={styles.postAvatar}
-                />
-                <View style={styles.postMeta}>
-                  <Text style={styles.postAuthor}>{post.author}</Text>
-                  <Text style={styles.postHandle}>{post.handle} · {formatTimeAgo(post.timestamp)}</Text>
+            <Text style={styles.sectionTitle}>Open discussion rooms</Text>
+            {marketRooms.length === 0 && (
+              <Text style={styles.emptyStateText}>No active rooms yet</Text>
+            )}
+            {marketRooms.map((room) => (
+              <Pressable
+                key={room.id}
+                style={styles.roomRow}
+                onPress={() => openRoomSheet(room)}
+              >
+                <View style={styles.roomHeader}>
+                  <Text style={styles.roomTitle}>{room.title}</Text>
+                  <Text style={styles.roomMeta}>{room.active} signals active</Text>
                 </View>
-                <Pill
-                  variant={
-                    post.sentiment === 'bullish'
-                      ? 'success'
-                      : post.sentiment === 'bearish'
-                      ? 'error'
-                      : 'secondary'
-                  }
-                >
-                  {post.sentiment}
-                </Pill>
-              </View>
-
-              <Text style={styles.postContent}>{post.content}</Text>
-
-              {post.tickersMentioned.length > 0 && (
-                <View style={styles.tickersRow}>
-                  {post.tickersMentioned.map((ticker) => (
-                    <Pill key={ticker} variant="secondary">
-                      ${ticker}
-                    </Pill>
-                  ))}
+                <Text style={styles.roomLatest} numberOfLines={1}>
+                  Latest headline ▸ {room.latest}
+                </Text>
+                <View style={styles.roomCTA}>
+                  <Text style={styles.roomCTAText}>Open room</Text>
                 </View>
-              )}
-
-              <View style={styles.postFooter}>
-                <View style={styles.postActions}>
-                  <Ionicons name="heart-outline" size={18} color={theme.colors.textTertiary} />
-                  <Text style={styles.likesCount}>{post.likes}</Text>
-                </View>
-              </View>
-            </View>
+              </Pressable>
             ))}
           </View>
         </GlowingBorder>
@@ -614,8 +964,211 @@ export const CommunityScreen: React.FC = () => {
       <QRCodeModal
         visible={showQRModal}
         onClose={() => setShowQRModal(false)}
-        username={username}
+        userId={userId || ''}
+        username={username || ''}
       />
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        visible={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        userId={userId || ''}
+        onFriendAdded={handleFriendAdded}
+      />
+
+      {/* Bottom Sheet */}
+      <Modal visible={sheetVisible} transparent animationType="slide">
+        <Pressable style={styles.sheetOverlay} onPress={() => setSheetVisible(false)}>
+          <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
+            {sheetMode === 'crypto' && sheetData && (
+              <>
+                <Text style={styles.sheetTitle}>{sheetData.title}</Text>
+                <Text style={styles.sheetSubtitle}>Narrative snapshot</Text>
+                <Text style={styles.sheetMeta}>
+                  {sheetVelocity?.direction ?? '—'} {sheetVelocity?.percent ?? 0}% (24h) ·{' '}
+                  {sheetData.insights.sources.length} sources ·{' '}
+                  {getConfidenceLabel(sheetData.insights.confidence.level)} confidence
+                </Text>
+                <View style={styles.sheetSection}>
+                  <Text style={styles.sheetWhy} numberOfLines={3}>
+                    Why: {getWhyLine(sheetData.insights.reason)}
+                  </Text>
+                </View>
+                {sheetData.insights.headlines?.length > 0 && (
+                  <>
+                    <Text style={styles.sheetSubtitle}>Latest headlines</Text>
+                    <View style={styles.sheetSection}>
+                      {sheetData.insights.headlines.slice(0, 3).map((headline: { title: string; url: string }, index: number) => (
+                        <Pressable
+                          key={`${headline.title}-${index}`}
+                          onPress={() => headline.url && Linking.openURL(headline.url)}
+                          style={styles.sheetHeadlineLink}
+                        >
+                          <Text style={styles.sheetBullet}>
+                            • {headline.title}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                )}
+                {sheetData.insights.sources?.length > 0 && (
+                  <>
+                    <Text style={styles.sheetSubtitle}>Sources</Text>
+                    <View style={styles.sheetSources}>
+                      {(sheetData.insights.sources || []).map((source: string) => (
+                        <View key={source} style={styles.sourcePill}>
+                          <Text style={styles.sourcePillText}>{source.toUpperCase()}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+            {sheetMode === 'room' && sheetData && (
+              <>
+                <Text style={styles.sheetTitle}>{sheetData.title}</Text>
+                <Text style={styles.sheetSubtitle}>Market room</Text>
+
+                {/* Stance Voting */}
+                <View style={styles.stanceContainer}>
+                  <View style={styles.stanceButtons}>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'bullish' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'bullish' ? 'rgba(16, 185, 129, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('bullish')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>🟢</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'bullish' && styles.stanceLabelActive]}>
+                        Bullish
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.bullish}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'bearish' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'bearish' ? 'rgba(239, 68, 68, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('bearish')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>🔴</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'bearish' && styles.stanceLabelActive]}>
+                        Bearish
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.bearish}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'neutral' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'neutral' ? 'rgba(107, 114, 128, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('neutral')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>⚪</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'neutral' && styles.stanceLabelActive]}>
+                        Neutral
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.neutral}</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.messageTypeRow}>
+                  {([
+                    { key: 'bull', label: 'Bull' },
+                    { key: 'bear', label: 'Bear' },
+                    { key: 'question', label: 'Question' },
+                    { key: 'insight', label: 'Insight' },
+                    { key: 'source', label: 'Source' },
+                  ] as const).map((type) => (
+                    <Pressable
+                      key={type.key}
+                      style={[
+                        styles.messageTypePill,
+                        roomMessageType === type.key && styles.messageTypePillActive,
+                      ]}
+                      onPress={() => setRoomMessageType(type.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.messageTypeText,
+                          roomMessageType === type.key && styles.messageTypeTextActive,
+                        ]}
+                      >
+                        {type.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <View style={styles.roomMessages}>
+                  {roomLoading && <Text style={styles.loadingText}>Loading room…</Text>}
+                  {roomError && <Text style={styles.errorText}>{roomError}</Text>}
+                  {!roomLoading && !roomError && roomMessages.length === 0 && (
+                    <Text style={styles.emptyStateText}>Be the first to add a take</Text>
+                  )}
+                  {roomMessages.map((message) => {
+                    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+                    const isOwnMessage = message.userId === effectiveUserId;
+                    
+                    return (
+                      <View key={message.id} style={styles.roomMessageRow}>
+                        <View style={styles.roomMessageHeader}>
+                          <Text style={styles.roomMessageAuthor}>@{message.username}</Text>
+                          {isOwnMessage && (
+                            <Pressable
+                              onPress={() => handleDeleteRoomMessage(message.id)}
+                              style={styles.roomMessageDeleteButton}
+                            >
+                              <Ionicons name="trash-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
+                            </Pressable>
+                          )}
+                        </View>
+                        <Text style={styles.roomMessageText}>{message.text}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.roomComposer}>
+                  <TextInput
+                    value={roomInput}
+                    onChangeText={setRoomInput}
+                    placeholder="Add a short take…"
+                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                    style={styles.roomInput}
+                    multiline
+                  />
+                  <Pressable style={styles.roomSendButton} onPress={handleSendRoomMessage}>
+                    <Text style={styles.roomSendButtonText}>Post</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {toastMessage && (
+        <View style={styles.toastContainer}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -667,8 +1220,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   statValue: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
     color: '#FFFFFF',
   },
   sectionNav: {
@@ -706,7 +1259,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   qrButton: {
-    padding: theme.spacing.xs,
+    padding: theme.spacing.md,
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
   },
   sectionContainer: {
     padding: 2, // Only enough space for the gradient border
@@ -716,11 +1273,6 @@ const styles = StyleSheet.create({
   sectionContent: {
     padding: theme.spacing.lg, // Normal spacing lives here
     borderRadius: theme.borderRadius.lg - 2,
-  },
-  glassInnerGlow: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: theme.borderRadius.lg,
-    pointerEvents: 'none',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -862,7 +1414,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 580, // Height to show header, filters, and more rows
+    height: 520, // Height to show header, filters, and exactly 7 rows without scrolling
     position: 'relative',
   },
   flipCard: {
@@ -898,12 +1450,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: theme.typography.weights.semibold,
   },
-  tableScrollView: {
-    maxHeight: 460, // Height to show more rows (table header + rows + gaps)
-  },
-  tableScrollContent: {
-    paddingBottom: theme.spacing.xs,
-  },
   table: {
     gap: theme.spacing.sm,
   },
@@ -922,8 +1468,26 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
     alignItems: 'center',
+    minHeight: 48, // Ensure consistent row height for 7 visible rows
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
+  },
+  loadingText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: theme.typography.sizes.sm,
+  },
+  errorRow: {
+    paddingVertical: theme.spacing.md,
+  },
+  errorText: {
+    color: theme.colors.error,
+    fontSize: theme.typography.sizes.sm,
   },
   rankCol: {
     width: 50,
@@ -992,6 +1556,124 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
+  narrativeCardMuted: {
+    opacity: 0.5,
+  },
+  narrativePageTitle: {
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+  },
+  narrativeTitle: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.md,
+  },
+  positionsSection: {
+    marginBottom: theme.spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.sm,
+  },
+  positionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  positionTag: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
+  },
+  positionTagText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FF6B35',
+  },
+  headlinesSection: {
+    marginBottom: theme.spacing.md,
+  },
+  headlineLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    marginBottom: theme.spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  headlineText: {
+    flex: 1,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: theme.typography.sizes.sm * 1.4,
+  },
+  narrativeCompactCard: {
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.lg,
+    backgroundColor: 'rgba(8, 8, 12, 0.6)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  narrativeCompactCardMuted: {
+    opacity: 0.5,
+  },
+  narrativeCompactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  narrativeCompactTitle: {
+    flex: 1,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  narrativeCompactMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginBottom: theme.spacing.xs,
+  },
+  narrativeCompactWhy: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: theme.spacing.sm,
+  },
+  narrativeCompactActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  velocityBadge: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+  },
+  velocityBadgeText: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FF6B35',
+  },
   narrativeHeader: {
     marginBottom: theme.spacing.md,
   },
@@ -1004,6 +1686,462 @@ const styles = StyleSheet.create({
   narrativeMetrics: {
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.lg,
+  },
+  narrativeWhy: {
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  narrativeWhyText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: theme.typography.sizes.sm * theme.typography.lineHeights.relaxed,
+  },
+  pulseContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  pulseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  pulseLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+    minWidth: 90,
+  },
+  pulseBar: {
+    flexDirection: 'row',
+    gap: 4,
+    flex: 1,
+  },
+  pulseSegment: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+  },
+  pulseSegmentActive: {
+    backgroundColor: '#FF6B35',
+  },
+  pulseSegmentInactive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  pulseLevel: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.7)',
+    minWidth: 90,
+    textAlign: 'right',
+  },
+  pulseDetail: {
+    marginTop: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
+  },
+  pulseDetailText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  whyCard: {
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: theme.spacing.lg,
+  },
+  whyCardTitle: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.xs,
+  },
+  whyCardText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  whyCardBullet: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginBottom: theme.spacing.xs,
+  },
+  sourceStack: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+  },
+  sourcePill: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  sourcePillText: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  deltaCard: {
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: theme.spacing.lg,
+  },
+  deltaTitle: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.xs,
+  },
+  deltaLine: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: theme.spacing.xs,
+  },
+  scenarioContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  scenarioChip: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    marginBottom: theme.spacing.sm,
+  },
+  scenarioChipActive: {
+    borderColor: '#FF6B35',
+  },
+  scenarioChipText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  scenarioText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: theme.spacing.xs,
+  },
+  mapContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  mapNode: {
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  mapNodeText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  mapLine: {
+    width: 2,
+    height: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginTop: theme.spacing.xs,
+  },
+  mapClear: {
+    marginTop: theme.spacing.sm,
+  },
+  mapClearText: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.bullish,
+  },
+  cryptoSignalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  cryptoAsset: {
+    width: 52,
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  cryptoEvent: {
+    flex: 1,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginRight: theme.spacing.sm,
+  },
+  cryptoReaction: {
+    width: 70,
+    textAlign: 'right',
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  cryptoBullish: {
+    color: theme.colors.bullish,
+  },
+  cryptoBearish: {
+    color: theme.colors.bearish,
+  },
+  emptyStateText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  emptyStateBlock: {
+    paddingVertical: theme.spacing.sm,
+  },
+  emptyStateSubtext: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.45)',
+    marginTop: theme.spacing.xs,
+  },
+  roomRow: {
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  roomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.xs,
+  },
+  roomTitle: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  roomMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  roomLatest: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  roomCTA: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+  },
+  roomCTAText: {
+    fontSize: theme.typography.sizes.xs,
+    color: '#FF6B35',
+    fontWeight: theme.typography.weights.semibold,
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheetContainer: {
+    backgroundColor: '#0F0A06',
+    padding: theme.spacing.lg,
+    borderTopLeftRadius: theme.borderRadius.lg,
+    borderTopRightRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  sheetTitle: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.sm,
+  },
+  sheetSubtitle: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.sm,
+  },
+  sheetSection: {
+    marginBottom: theme.spacing.lg,
+  },
+  sheetMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginBottom: theme.spacing.sm,
+  },
+  sheetWhy: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  sheetBullet: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: theme.spacing.xs,
+  },
+  sheetHeadlineLink: {
+    marginBottom: theme.spacing.xs,
+  },
+  sheetSources: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  messageTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  messageTypePill: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  messageTypePillActive: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+  },
+  messageTypeText: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  messageTypeTextActive: {
+    color: '#FF6B35',
+    fontWeight: theme.typography.weights.semibold,
+  },
+  roomMessages: {
+    marginBottom: theme.spacing.lg,
+  },
+  roomMessageRow: {
+    marginBottom: theme.spacing.sm,
+  },
+  roomMessageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  roomMessageAuthor: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  roomMessageDeleteButton: {
+    padding: theme.spacing.xs,
+  },
+  stanceContainer: {
+    marginBottom: theme.spacing.md,
+  },
+  stanceButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    justifyContent: 'space-between',
+  },
+  stanceButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: theme.spacing.xs,
+  },
+  stanceButtonActive: {
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 2,
+  },
+  stanceEmoji: {
+    fontSize: theme.typography.sizes.md,
+  },
+  stanceLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.typography.weights.medium,
+  },
+  stanceLabelActive: {
+    color: theme.colors.textPrimary,
+    fontWeight: theme.typography.weights.semibold,
+  },
+  stanceCount: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textTertiary,
+    fontWeight: theme.typography.weights.medium,
+  },
+  roomMessageText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  roomComposer: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: theme.spacing.md,
+  },
+  roomInput: {
+    minHeight: 48,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.sm,
+  },
+  roomSendButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: '#FF6B35',
+  },
+  roomSendButtonText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#0F0A06',
+  },
+  actionChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  actionChip: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.5)',
+  },
+  actionChipMuted: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  actionChipText: {
+    fontSize: theme.typography.sizes.sm,
+    color: '#FFFFFF',
+  },
+  actionChipSubtext: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  narrativeSignalRow: {
+    marginBottom: theme.spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  narrativeSignal: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.bullish,
+  },
+  narrativeDetails: {
+    marginTop: theme.spacing.md,
   },
   metricRow: {
     flexDirection: 'row',
@@ -1044,6 +2182,31 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.md,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  narrativeConfidence: {
+    marginTop: theme.spacing.md,
+  },
+  confidenceText: {
+    marginTop: theme.spacing.xs,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: theme.typography.weights.semibold,
+  },
+  confidenceDrivers: {
+    marginTop: theme.spacing.xs,
+  },
+  confidenceDriverText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  narrativeNext: {
+    marginTop: theme.spacing.md,
+  },
+  narrativeNextText: {
+    marginTop: theme.spacing.xs,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: theme.typography.sizes.sm * theme.typography.lineHeights.relaxed,
   },
   timelineTitle: {
     fontSize: theme.typography.sizes.xs,
@@ -1172,7 +2335,15 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   postAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   postAvatarText: {
     fontSize: theme.typography.sizes.sm,
@@ -1197,6 +2368,11 @@ const styles = StyleSheet.create({
     lineHeight: theme.typography.sizes.md * theme.typography.lineHeights.relaxed,
     marginBottom: theme.spacing.md,
   },
+  postSubtext: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: theme.spacing.xs,
+  },
   postFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1216,4 +2392,31 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     color: 'rgba(255, 255, 255, 0.6)',
   },
+  toastContainer: {
+    position: 'absolute',
+    left: theme.spacing.lg,
+    right: theme.spacing.lg,
+    bottom: theme.spacing.xl,
+    backgroundColor: 'rgba(15, 15, 20, 0.95)',
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  toastText: {
+    fontSize: theme.typography.sizes.sm,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
 });
+
+// Export wrapped component with error boundary
+export const CommunityScreen: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <CommunityScreenContent />
+    </ErrorBoundary>
+  );
+};
+

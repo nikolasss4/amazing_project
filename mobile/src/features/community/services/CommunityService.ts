@@ -2,8 +2,9 @@ import axios from 'axios';
 import type { CommunityNarrative } from '../hooks/useCommunityData';
 
 // API Configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000/api/v1';
-const COMMUNITY_API_BASE_URL = process.env.COMMUNITY_API_BASE_URL || 'http://localhost:3000/api';
+// Use 127.0.0.1 instead of localhost for better web compatibility
+const API_BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3000/api/v1';
+const COMMUNITY_API_BASE_URL = process.env.COMMUNITY_API_BASE_URL || 'http://127.0.0.1:3000/api';
 
 // For development: use your machine's local IP for testing on device
 // const API_BASE_URL = 'http://192.168.1.x:3000/api/v1';
@@ -75,6 +76,26 @@ export interface MarketMessage {
   username: string;
   text: string;
   createdAt: string;
+}
+
+export type StanceType = 'bullish' | 'bearish' | 'neutral';
+
+export interface NarrativeStance {
+  id: string;
+  narrativeId: string;
+  userId: string;
+  stance: StanceType;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StanceData {
+  userStance: StanceType | null;
+  counts: {
+    bullish: number;
+    bearish: number;
+    neutral: number;
+  };
 }
 
 /**
@@ -160,19 +181,47 @@ class CommunityServiceClass {
    */
   async getNarratives(userId: string, limit: number = 20): Promise<CommunityNarrative[]> {
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityService.ts:162',message:'getNarratives called',data:{userId,limit,url:`${COMMUNITY_API_BASE_URL}/narratives`},timestamp:Date.now(),sessionId:'debug-session',runId:'check-api-call',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
+      console.log(`[CommunityService] Fetching narratives from ${COMMUNITY_API_BASE_URL}/narratives`);
       const response = await axios.get(`${COMMUNITY_API_BASE_URL}/narratives`, {
         headers: this.getHeaders(userId),
         params: { limit },
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityService.ts:168',message:'API response received',data:{narrativesCount:response.data?.length||0,firstNarrativeTitle:response.data?.[0]?.title,firstReason:response.data?.[0]?.insights?.reason?.substring(0,60),hasGenericText:(response.data?.[0]?.insights?.reason||'').includes('Narrative formed from recent'),headlinesCount:response.data?.[0]?.insights?.headlines?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'check-api-call',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
+      const narrativeCount = response.data?.length || 0;
+      console.log(`[CommunityService] Received ${narrativeCount} narratives`);
+      
+      if (narrativeCount === 0) {
+        console.warn('[CommunityService] No narratives found. To fix this:');
+        console.warn('  1. Run: cd backend && ./setup-community-data.sh');
+        console.warn('  2. Or manually: seed sources → ingest news → build narratives');
+        console.warn('  See COMMUNITY_DATA_SETUP.md for details');
+      }
+      
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to get narratives');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to get narratives';
+      const statusCode = error.response?.status;
+      const statusText = error.response?.statusText;
+      
+      console.error('[CommunityService] Error fetching narratives:', {
+        message: errorMessage,
+        status: statusCode,
+        statusText,
+        url: `${COMMUNITY_API_BASE_URL}/narratives`,
+        userId,
+      });
+      
+      // Provide more helpful error messages
+      if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
+        throw new Error(`Cannot connect to backend at ${COMMUNITY_API_BASE_URL}. Make sure the backend server is running.`);
+      }
+      if (statusCode === 401) {
+        throw new Error('Authentication failed. Check your user ID.');
+      }
+      if (statusCode === 500) {
+        throw new Error(`Backend error: ${errorMessage}. Check backend logs and ensure API keys are configured.`);
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 
@@ -242,6 +291,20 @@ class CommunityServiceClass {
   }
 
   /**
+   * Delete a market room message
+   */
+  async deleteRoomMessage(userId: string, narrativeId: string, messageId: string): Promise<void> {
+    try {
+      await axios.delete(
+        `${COMMUNITY_API_BASE_URL}/rooms/${narrativeId}/messages/${messageId}`,
+        { headers: this.getHeaders(userId) }
+      );
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to delete message');
+    }
+  }
+
+  /**
    * Get unified social feed (news + X)
    */
   async getFeed(userId: string, limit: number = 20): Promise<SocialPost[]> {
@@ -253,6 +316,41 @@ class CommunityServiceClass {
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to get feed');
+    }
+  }
+
+  /**
+   * Cast or update a stance vote on a narrative
+   */
+  async castStance(
+    userId: string,
+    narrativeId: string,
+    stance: StanceType
+  ): Promise<NarrativeStance> {
+    try {
+      const response = await axios.post(
+        `${COMMUNITY_API_BASE_URL}/rooms/${narrativeId}/stance`,
+        { stance },
+        { headers: this.getHeaders(userId) }
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to cast stance');
+    }
+  }
+
+  /**
+   * Get stance data for a narrative (user's stance + counts)
+   */
+  async getStance(userId: string, narrativeId: string): Promise<StanceData> {
+    try {
+      const response = await axios.get(
+        `${COMMUNITY_API_BASE_URL}/rooms/${narrativeId}/stance`,
+        { headers: this.getHeaders(userId) }
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to get stance');
     }
   }
 }

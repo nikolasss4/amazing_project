@@ -89,11 +89,17 @@ export async function getCommunityNarratives(
   const cryptoSources = await newsSourceRepo.getNewsSourcesByCategory('crypto');
   const cryptoSourceNames = cryptoSources.filter(s => s.active).map(s => s.name);
   
+  // Also include macro sources (like NewsAPI) to show narratives from all sources
+  // This allows narratives to show up even if they're from macro sources
+  const macroSources = await newsSourceRepo.getNewsSourcesByCategory('macro');
+  const macroSourceNames = macroSources.filter(s => s.active).map(s => s.name);
+  const allSourceNames = [...new Set([...cryptoSourceNames, ...macroSourceNames])];
+  
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'community-api.service.ts:82',message:'crypto sources',data:{cryptoSourceNames,cryptoSourcesCount:cryptoSources.length,activeCount:cryptoSourceNames.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'community-api.service.ts:82',message:'crypto sources',data:{cryptoSourceNames,cryptoSourcesCount:cryptoSources.length,activeCount:cryptoSourceNames.length,allSourceNames},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
   // #endregion
   
-  if (cryptoSourceNames.length === 0) {
+  if (allSourceNames.length === 0) {
     return [];
   }
 
@@ -146,7 +152,7 @@ export async function getCommunityNarratives(
   const newsArticles = await prisma.newsArticle.findMany({
     where: { 
       id: { in: uniqueIds },
-      source: { in: cryptoSourceNames },
+      source: { in: allSourceNames },
     },
     select: {
       id: true,

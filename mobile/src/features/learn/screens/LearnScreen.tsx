@@ -20,6 +20,7 @@ type Answer = 'up' | 'down' | 'flat';
 
 export const LearnScreen: React.FC = () => {
   const { totalXP, streak, addXP, incrementStreak } = useLearnStore();
+  
   const [currentScenarioIndex, setCurrentScenarioIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<Answer | null>(null);
   const [showResult, setShowResult] = useState(false);

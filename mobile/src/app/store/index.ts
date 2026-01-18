@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Trade Store
 import { TradePair, TradeTheme } from '../../features/trade/models';
@@ -141,18 +142,180 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   clearChat: () => set({ messages: [], screenshotUri: null }),
 }));
 
-// User Store
-interface UserStore {
-  userId: string | null;
-  username: string | null;
-  setUser: (userId: string, username: string) => void;
-  clearUser: () => void;
+// Wallet Store
+import { Platform } from 'react-native';
+
+const WALLET_ADDRESS_KEY = '@wallet_address';
+const ACCESS_TOKEN_KEY = '@access_token';
+const PRIVATE_KEY_KEY = '@private_key';
+
+// Dynamic API Base URL for wallet auth
+const getApiBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
+  // For mobile devices, use LAN IP
+  return 'http://10.0.11.138:8000';
+};
+
+interface WalletState {
+  walletAddress: string | null;
+  privateKey: string | null;
+  isConnected: boolean;
+  isAuthenticating: boolean;
+  accessToken: string | null;
+  authError: string | null;
+  connect: (address: string, privateKey: string) => Promise<void>;
+  disconnect: () => Promise<void>;
+  initialize: () => Promise<void>;
+  getAccessToken: () => string | null;
+  getPrivateKey: () => string | null;
 }
 
-export const useUserStore = create<UserStore>((set) => ({
-  userId: null,
-  username: null,
-  setUser: (userId: string, username: string) => set({ userId, username }),
-  clearUser: () => set({ userId: null, username: null }),
-}));
+const isValidEthAddress = (address: string): boolean => {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+};
 
+const isValidPrivateKey = (key: string): boolean => {
+  // Private key should be 64 hex characters (without 0x prefix) or 66 with 0x prefix
+  const cleanKey = key.startsWith('0x') ? key.slice(2) : key;
+  return /^[a-fA-F0-9]{64}$/.test(cleanKey);
+};
+
+export const useWalletStore = create<WalletState>((set, get) => ({
+  walletAddress: null,
+  privateKey: null,
+  isConnected: false,
+  isAuthenticating: false,
+  accessToken: null,
+  authError: null,
+  
+  connect: async (address: string, privateKey: string) => {
+    // Validate address format
+    const trimmedAddress = address.trim();
+    if (!isValidEthAddress(trimmedAddress)) {
+      throw new Error('Invalid wallet address format. Please enter a valid Ethereum address (0x...)');
+    }
+    
+    // Validate private key format
+    const trimmedPrivateKey = privateKey.trim();
+    if (!isValidPrivateKey(trimmedPrivateKey)) {
+      throw new Error('Invalid private key format. Please enter a valid 64-character hex private key.');
+    }
+    
+    set({ isAuthenticating: true, authError: null });
+    
+    try {
+      const apiBaseUrl = getApiBaseUrl();
+      console.log('\n' + '='.repeat(80));
+      console.log('WALLET CONNECT - Calling backend authentication');
+      console.log('='.repeat(80));
+      console.log('Platform:', Platform.OS);
+      console.log('API URL:', apiBaseUrl);
+      console.log('Address:', trimmedAddress);
+      console.log('Private Key:', trimmedPrivateKey.substring(0, 8) + '...' + trimmedPrivateKey.substring(trimmedPrivateKey.length - 4));
+      
+      // Call backend to authenticate the wallet with private key
+      const authUrl = `${apiBaseUrl}/api/trade/pear/auth/authenticate-wallet`;
+      console.log('Auth URL:', authUrl);
+      console.log('Making POST request...');
+      
+      const response = await fetch(authUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address: trimmedAddress,
+          privateKey: trimmedPrivateKey,
+        }),
+      });
+      
+      console.log('Response status:', response.status);
+      const result = await response.json();
+      console.log('Response data:', JSON.stringify(result, null, 2));
+      console.log('='.repeat(80) + '\n');
+      
+      if (!result.success) {
+        const errorMsg = result.error || result.message || 'Authentication failed';
+        set({ isAuthenticating: false, authError: errorMsg });
+        throw new Error(errorMsg);
+      }
+      
+      // Store tokens, address, and private key in AsyncStorage for persistence
+      await AsyncStorage.setItem(WALLET_ADDRESS_KEY, trimmedAddress);
+      await AsyncStorage.setItem(PRIVATE_KEY_KEY, trimmedPrivateKey);
+      if (result.accessToken) {
+        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, result.accessToken);
+      }
+      
+      // Update state
+      set({ 
+        walletAddress: trimmedAddress,
+        privateKey: trimmedPrivateKey,
+        isConnected: true,
+        isAuthenticating: false,
+        accessToken: result.accessToken || null,
+        authError: null,
+      });
+      
+      console.log('Wallet connected and authenticated:', trimmedAddress);
+    } catch (error) {
+      console.error('Wallet connection failed:', error);
+      set({ isAuthenticating: false });
+      throw error instanceof Error ? error : new Error('Failed to authenticate wallet');
+    }
+  },
+  
+  disconnect: async () => {
+    try {
+      // Clear from AsyncStorage
+      await AsyncStorage.multiRemove([WALLET_ADDRESS_KEY, ACCESS_TOKEN_KEY, PRIVATE_KEY_KEY]);
+      
+      // Reset state
+      set({ 
+        walletAddress: null,
+        privateKey: null,
+        isConnected: false,
+        accessToken: null,
+        authError: null,
+      });
+      
+      console.log('Wallet disconnected');
+    } catch (error) {
+      console.error('Failed to disconnect wallet:', error);
+      throw new Error('Failed to disconnect wallet');
+    }
+  },
+  
+  initialize: async () => {
+    try {
+      // Load from AsyncStorage on app start
+      const savedAddress = await AsyncStorage.getItem(WALLET_ADDRESS_KEY);
+      const savedToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+      const savedPrivateKey = await AsyncStorage.getItem(PRIVATE_KEY_KEY);
+      
+      if (savedAddress && isValidEthAddress(savedAddress)) {
+        set({ 
+          walletAddress: savedAddress,
+          privateKey: savedPrivateKey,
+          isConnected: true,
+          accessToken: savedToken,
+        });
+        console.log('Wallet restored from storage:', savedAddress);
+      } else {
+        console.log('No saved wallet found');
+      }
+    } catch (error) {
+      console.error('Failed to initialize wallet:', error);
+    }
+  },
+  
+  getAccessToken: () => {
+    return get().accessToken;
+  },
+  
+  getPrivateKey: () => {
+    return get().privateKey;
+  },
+}));

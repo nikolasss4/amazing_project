@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { StatusBar, View, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/app/navigation/RootNavigator';
 import { AssistantOverlay } from './src/features/assistant/components/AssistantOverlay';
 import { BACKEND_BASE_URL } from './src/app/config';
@@ -15,13 +16,15 @@ export default function App() {
   const appContainerRef = useRef<View>(null);
 
   return (
-    <GestureHandlerRootView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <View ref={appContainerRef} style={styles.container} collapsable={false}>
-        <RootNavigator />
-      </View>
-      <AssistantOverlay screenRef={appContainerRef} />
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={styles.container}>
+        <StatusBar barStyle="light-content" />
+        <View ref={appContainerRef} style={styles.container} collapsable={false}>
+          <RootNavigator />
+        </View>
+        <AssistantOverlay screenRef={appContainerRef} />
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 

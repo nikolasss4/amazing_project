@@ -26,6 +26,7 @@ model User {
   socialPosts          SocialPost[]
   postLikes            PostLike[]
   marketMessages       MarketMessage[]
+  narrativeStances      NarrativeStance[]
 
   @@index([username])
 }
@@ -251,6 +252,7 @@ model DetectedNarrative {
   metrics   NarrativeMetric[]
   followers NarrativeFollower[]
   messages  MarketMessage[]
+  stances   NarrativeStance[]
 
   @@index([createdAt])
   @@index([sentiment])
@@ -311,6 +313,23 @@ model DetectedNarrativeArticle {
   @@unique([narrativeId, articleId])
   @@index([narrativeId])
   @@index([articleId])
+}
+
+model NarrativeStance {
+  id          String   @id @default(uuid())
+  narrativeId String
+  userId      String
+  stance      String   // 'bullish' | 'bearish' | 'neutral'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  narrative DetectedNarrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, narrativeId])
+  @@index([narrativeId])
+  @@index([userId])
+  @@index([stance])
 }
 
 // External social posts (Twitter/X, etc.)

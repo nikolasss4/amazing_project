@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Pear Protocol
     PEAR_API_URL: str = "https://hl-v2.pearprotocol.io"
     PEAR_API_KEY: str = ""
+    PEAR_CLIENT_ID: str = "HLHackathon9"
+    
+    # Wallet (for server-side authentication)
+    WALLET_PRIVATE_KEY: str = ""
+    AGENT_WALLET_ADDRESS: str = ""
 
     # OpenAI
     OPENAI_API_KEY: str = ""
