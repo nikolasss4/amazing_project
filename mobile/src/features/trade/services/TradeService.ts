@@ -12,7 +12,22 @@
  * - Pair/basket trades: POST /positions
  */
 
+import { Platform } from 'react-native';
 import { TradeOrder, TradeTheme, TradePair } from '../models';
+import { useWalletStore } from '../../../app/store';
+
+// Dynamic API Base URL - matches WalletService configuration
+// For iOS Simulator: use 'localhost'
+// For Android Emulator: use '10.0.2.2'
+// For physical device: use your machine's LAN IP (e.g., '10.0.11.138')
+// For web: use 'localhost'
+const getApiBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000/api/trade/pear';
+  }
+  // For mobile devices, use LAN IP
+  return 'http://10.0.11.138:8000/api/trade/pear';
+};
 
 /**
  * Request format for single spot orders
@@ -81,32 +96,102 @@ export interface PearTradeResponse {
   error?: string;
 }
 
+/**
+ * Asset position details from Pear Protocol
+ */
+export interface PearAssetPosition {
+  coin: string;
+  entryPrice: number;
+  actualSize: number;
+  leverage: number;
+  marginUsed: number;
+  positionValue: number;
+  unrealizedPnl: number;
+  entryPositionValue: number;
+  initialWeight: number;
+  fundingPaid: number;
+}
+
+/**
+ * Open position from Pear Protocol
+ */
+export interface PearOpenPosition {
+  positionId: string;
+  address: string;
+  pearExecutionFlag: string;
+  stopLoss?: {
+    type: string;
+    value: number;
+    isTrailing: boolean;
+    trailingDeltaValue?: number;
+    trailingActivationValue?: number;
+  } | null;
+  takeProfit?: {
+    type: string;
+    value: number;
+    isTrailing: boolean;
+    trailingDeltaValue?: number;
+    trailingActivationValue?: number;
+  } | null;
+  entryRatio: number;
+  markRatio: number;
+  entryPriceRatio: number;
+  markPriceRatio: number;
+  entryPositionValue: number;
+  positionValue: number;
+  marginUsed: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercentage: number;
+  longAssets: PearAssetPosition[];
+  shortAssets: PearAssetPosition[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Response from get open positions endpoint
+ */
+export interface GetOpenPositionsResponse {
+  success: boolean;
+  positions: PearOpenPosition[];
+  count: number;
+  error?: string;
+}
+
+/**
+ * Multi-pair order leg format
+ */
+export interface MultiPairLeg {
+  longAsset: string;
+  shortAsset: string;
+  weight: number;
+}
+
+/**
+ * Multi-pair order format (from TradeScreen)
+ */
+export interface MultiPairOrder {
+  type: 'multi-pair';
+  legs: MultiPairLeg[];
+  amount: number;
+  orderType: 'market' | 'limit';
+}
+
 class TradeServiceClass {
   /**
    * Base URL for Pear Execution API
-   * Mainnet: hl-v2.pearprotocol.io (production environment)
+   * Dynamically determined based on platform (web/mobile)
    */
-  private apiBaseUrl = 'https://hl-v2.pearprotocol.io';
+  private apiBaseUrl = getApiBaseUrl();
   private clientId = 'HLHackathon1'; // Default, can be rotated
 
   /**
-   * Access token getter function
-   * Set via setAccessTokenGetter() when authentication is implemented
-   */
-  private accessTokenGetter: (() => Promise<string>) | null = null;
-
-  /**
    * Get access token for API authentication
-   * TODO: Implement when Step 2 (Authentication) is completed
-   * For now, returns empty string - will need to be replaced with actual token
+   * Uses wallet store to get the stored access token
    */
   private async getAccessToken(): Promise<string> {
-    if (this.accessTokenGetter) {
-      return await this.accessTokenGetter();
-    }
-    // TODO: Replace with actual AuthService.getAccessToken() when authentication is implemented
-    // For now, return empty string - API calls will fail with 401 until auth is implemented
-    return '';
+    const token = useWalletStore.getState().getAccessToken();
+    return token || '';
   }
 
   /**
@@ -114,30 +199,130 @@ class TradeServiceClass {
    * Routes to appropriate endpoint based on order type:
    * - Single token trades -> /orders/spot
    * - Pair/basket trades -> /positions
+   * - Multi-pair trades -> /positions (aggregated)
    */
-  async submitOrder(order: TradeOrder): Promise<PearTradeResponse> {
+  async submitOrder(order: TradeOrder | MultiPairOrder, walletAddress: string): Promise<PearTradeResponse> {
+    console.log('\n' + '='.repeat(80));
+    console.log('SUBMITTING TRADE ORDER');
+    console.log('='.repeat(80));
+    console.log('Platform:', Platform.OS);
+    console.log('Order Type:', order.type);
+    console.log('Amount:', order.amount);
+    console.log('Wallet:', walletAddress);
+    console.log('API Base URL:', this.apiBaseUrl);
+    
     try {
-      // Get access token (will be empty until auth is implemented)
+      // Get access token
+      console.log('Getting access token...');
       const accessToken = await this.getAccessToken();
+      console.log('Access token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
 
       // Route to appropriate endpoint based on order type
-      if (order.type === 'single' && order.pair) {
-        // Single spot order
-        return await this.submitSpotOrder(order, accessToken);
+      if (order.type === 'multi-pair') {
+        console.log('Routing to MULTI-PAIR position endpoint');
+        return await this.submitMultiPairPosition(order as MultiPairOrder, accessToken, walletAddress);
+      } else if (order.type === 'single' && (order as TradeOrder).pair) {
+        console.log('Routing to SINGLE spot order endpoint');
+        return await this.submitSpotOrder(order as TradeOrder, accessToken, walletAddress);
       } else if (order.type === 'pair' || order.type === 'theme') {
-        // Pair or basket trade (position)
-        return await this.submitPosition(order, accessToken);
+        console.log('Routing to PAIR/BASKET position endpoint');
+        return await this.submitPosition(order as TradeOrder, accessToken, walletAddress);
       } else {
+        console.error('Invalid order type!');
         return {
           success: false,
-          error: 'Invalid order type. Must be single token or pair trade.',
+          error: 'Invalid order type. Must be single token, pair trade, or multi-pair.',
         };
       }
     } catch (error) {
       console.error('TradeService error:', error);
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  /**
+   * Submit a multi-pair position trade
+   * This is for the new "Make Your Bet" interface
+   */
+  private async submitMultiPairPosition(
+    order: MultiPairOrder,
+    accessToken: string,
+    walletAddress: string
+  ): Promise<PearTradeResponse> {
+    // Build URL with authorization as query param so backend can forward to Pear API
+    const baseUrl = `${this.apiBaseUrl}/positions`;
+    const url = accessToken 
+      ? `${baseUrl}?authorization=${encodeURIComponent(accessToken)}`
+      : baseUrl;
+    
+    try {
+      // Build long and short assets from legs
+      // For Pear Protocol pair trades, both longAssets AND shortAssets are required
+      const longAssets: Array<{ asset: string; weight: number }> = [];
+      const shortAssets: Array<{ asset: string; weight: number }> = [];
+      
+      for (const leg of order.legs) {
+        // Add actual trading assets (skip USDC as it will be added with weight 0)
+        if (leg.longAsset !== 'USDC') {
+          longAssets.push({ asset: leg.longAsset, weight: leg.weight / 100 });
+        }
+        if (leg.shortAsset !== 'USDC') {
+          shortAssets.push({ asset: leg.shortAsset, weight: leg.weight / 100 });
+        }
+      }
+
+      // Always include USDC with minimal weight in both arrays
+      // This ensures both longAssets and shortAssets are never empty
+      longAssets.push({ asset: 'USDC', weight: 0.0001 });
+      shortAssets.push({ asset: 'USDC', weight: 0.0001 });
+
+      const requestBody = {
+        slippage: 0.01,
+        executionType: 'MARKET',  // Use MARKET for immediate execution
+        leverage: 1,
+        usdValue: order.amount,
+        longAssets,
+        shortAssets,
+        // Default stopLoss and takeProfit at 100%
+        stopLoss: {
+          type: 'PERCENTAGE',
+          value: 100,
+        },
+        takeProfit: {
+          type: 'PERCENTAGE',
+          value: 100,
+        },
+        walletAddress,
+      };
+
+      console.log('\n' + '='.repeat(80));
+      console.log('MULTI-PAIR POSITION REQUEST');
+      console.log('='.repeat(80));
+      console.log('URL:', url);
+      console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+      console.log('Body:', JSON.stringify(requestBody, null, 2));
+      console.log('Making POST request to Pear Protocol via backend...');
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log('Response Status:', response.status);
+      return await this.handleApiResponse(response);
+    } catch (error) {
+      console.error('Multi-pair position error:', error);
+      console.log('='.repeat(80) + '\n');
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to execute multi-pair trade',
       };
     }
   }
@@ -148,29 +333,46 @@ class TradeServiceClass {
    */
   private async submitSpotOrder(
     order: TradeOrder,
-    accessToken: string
+    accessToken: string,
+    walletAddress: string
   ): Promise<PearTradeResponse> {
+    // Build URL with authorization as query param so backend can forward to Pear API
+    const baseUrl = `${this.apiBaseUrl}/orders/spot`;
+    const url = accessToken 
+      ? `${baseUrl}?authorization=${encodeURIComponent(accessToken)}`
+      : baseUrl;
+    
     try {
       // Convert to Pear API format
       const asset = order.pair!.symbol.replace('USD', '').replace('/', '');
-      const requestBody: PearSpotOrderRequest = {
+      const requestBody: any = {
         asset,
         isBuy: order.side === 'long',
         amount: order.amount,
+        walletAddress, // Include wallet address
       };
 
-      const response = await fetch(`${this.apiBaseUrl}/orders/spot`, {
+      console.log('\n' + '='.repeat(80));
+      console.log('SPOT ORDER REQUEST');
+      console.log('='.repeat(80));
+      console.log('URL:', url);
+      console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+      console.log('Body:', JSON.stringify(requestBody, null, 2));
+      console.log('Making POST request...');
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
         body: JSON.stringify(requestBody),
       });
 
+      console.log('Response Status:', response.status);
       return await this.handleApiResponse(response);
     } catch (error) {
       console.error('Spot order error:', error);
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to execute spot order',
@@ -184,24 +386,43 @@ class TradeServiceClass {
    */
   private async submitPosition(
     order: TradeOrder,
-    accessToken: string
+    accessToken: string,
+    walletAddress: string
   ): Promise<PearTradeResponse> {
+    // Build URL with authorization as query param so backend can forward to Pear API
+    const baseUrl = `${this.apiBaseUrl}/positions`;
+    const url = accessToken 
+      ? `${baseUrl}?authorization=${encodeURIComponent(accessToken)}`
+      : baseUrl;
+    
     try {
       // Convert to Pear API format
-      const requestBody = this.convertToPositionRequest(order);
+      const requestBody = {
+        ...this.convertToPositionRequest(order),
+        walletAddress, // Include wallet address
+      };
 
-      const response = await fetch(`${this.apiBaseUrl}/positions`, {
+      console.log('\n' + '='.repeat(80));
+      console.log('POSITION ORDER REQUEST');
+      console.log('='.repeat(80));
+      console.log('URL:', url);
+      console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+      console.log('Body:', JSON.stringify(requestBody, null, 2));
+      console.log('Making POST request to Pear Protocol via backend...');
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
         body: JSON.stringify(requestBody),
       });
 
+      console.log('Response Status:', response.status);
       return await this.handleApiResponse(response);
     } catch (error) {
       console.error('Position trade error:', error);
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to execute position trade',
@@ -290,19 +511,34 @@ class TradeServiceClass {
     const contentType = response.headers.get('content-type');
     const isJson = contentType?.includes('application/json');
 
+    console.log('📋 Content-Type:', contentType);
+    console.log('📋 Is JSON:', isJson);
+
     if (!response.ok) {
+      console.error('❌ Response NOT OK!');
+      console.error('📊 Status:', response.status, response.statusText);
+      
       // Handle error response
       let errorMessage = `API error: ${response.status} ${response.statusText}`;
 
       if (isJson) {
         try {
           const errorData = (await response.json()) as PearErrorResponse;
+          console.error('📦 Error Data:', errorData);
           errorMessage = errorData.error?.message || errorMessage;
         } catch (e) {
-          // Failed to parse error JSON, use default message
+          console.error('Failed to parse error JSON:', e);
+        }
+      } else {
+        try {
+          const text = await response.text();
+          console.error('📦 Error Text:', text);
+        } catch (e) {
+          console.error('Failed to read error text:', e);
         }
       }
 
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: errorMessage,
@@ -310,9 +546,13 @@ class TradeServiceClass {
     }
 
     // Handle success response
+    console.log('✅ Response OK!');
+    
     if (isJson) {
       try {
         const data = (await response.json()) as PearSuccessResponse;
+        console.log('📦 Success Data:', data);
+        console.log('='.repeat(80) + '\n');
         return {
           success: true,
           orderId: data.orderId,
@@ -320,6 +560,8 @@ class TradeServiceClass {
           message: data.message || 'Order executed successfully',
         };
       } catch (e) {
+        console.error('❌ Failed to parse success JSON:', e);
+        console.log('='.repeat(80) + '\n');
         return {
           success: false,
           error: 'Failed to parse API response',
@@ -328,6 +570,8 @@ class TradeServiceClass {
     }
 
     // Non-JSON success response
+    console.log('✅ Non-JSON success response');
+    console.log('='.repeat(80) + '\n');
     return {
       success: true,
       message: 'Order executed successfully',
@@ -339,14 +583,6 @@ class TradeServiceClass {
    */
   setClientId(clientId: string): void {
     this.clientId = clientId;
-  }
-
-  /**
-   * Set access token getter function
-   * Call this when authentication is implemented to provide token retrieval
-   */
-  setAccessTokenGetter(getter: () => Promise<string>): void {
-    this.getAccessToken = getter;
   }
 
   /**
@@ -367,6 +603,69 @@ class TradeServiceClass {
     // This would fetch from Pear API
     // For now, return empty array (using mock data from models)
     return [];
+  }
+
+  /**
+   * Get open positions from Pear Protocol
+   * Calls backend which proxies to Pear Protocol API
+   */
+  async getOpenPositions(accessToken?: string): Promise<GetOpenPositionsResponse> {
+    console.log('\n' + '='.repeat(80));
+    console.log('FETCHING OPEN POSITIONS');
+    console.log('='.repeat(80));
+    console.log('Platform:', Platform.OS);
+    console.log('API Base URL:', this.apiBaseUrl);
+    console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+
+    try {
+      // Get access token from store if not provided
+      const token = accessToken || await this.getAccessToken();
+      
+      const url = `${this.apiBaseUrl}/positions/open${token ? `?authorization=${encodeURIComponent(token)}` : ''}`;
+      console.log('Request URL:', url);
+      console.log('Making GET request...');
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      console.log('Response Status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error Response:', errorText);
+        console.log('='.repeat(80) + '\n');
+        return {
+          success: false,
+          positions: [],
+          count: 0,
+          error: `Failed to fetch positions: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+      console.log('Response Data:', JSON.stringify(data, null, 2));
+      console.log('='.repeat(80) + '\n');
+
+      return {
+        success: data.success ?? true,
+        positions: data.positions ?? [],
+        count: data.count ?? 0,
+        error: data.error,
+      };
+    } catch (error) {
+      console.error('Failed to fetch open positions:', error);
+      console.log('='.repeat(80) + '\n');
+      return {
+        success: false,
+        positions: [],
+        count: 0,
+        error: error instanceof Error ? error.message : 'Failed to fetch positions',
+      };
+    }
   }
 }
 

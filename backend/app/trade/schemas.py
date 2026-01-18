@@ -124,6 +124,55 @@ class HyperliquidPositionResponse(BaseModel):
 # ============================================================================
 
 
+class PearAssetWeight(BaseModel):
+    """Asset with weight for position trading."""
+    
+    asset: str
+    weight: float
+
+
+class PearStopLossTakeProfit(BaseModel):
+    """Stop loss or take profit configuration."""
+    
+    type: str  # 'PERCENTAGE' | 'DOLLAR' | 'POSITION_VALUE'
+    value: float
+
+
+class PearLadderConfig(BaseModel):
+    """Ladder execution configuration."""
+    
+    ratioStart: float
+    ratioEnd: float
+    numberOfLevels: int
+
+
+class PearPositionRequest(BaseModel):
+    """Request format for Pear Protocol position trades (pairs/baskets)."""
+    
+    slippage: float = Field(..., description="Slippage tolerance (0.01 = 1%)")
+    executionType: str = Field(..., description="Execution type: SYNC, MARKET, TRIGGER, TWAP, LADDER, TP, SL, SPOT_MARKET, SPOT_LIMIT, SPOT_TWAP")
+    leverage: float = Field(..., ge=1, le=100, description="Leverage (1-100)")
+    usdValue: float = Field(..., gt=0, description="Total notional USD size")
+    longAssets: list[PearAssetWeight] | None = None
+    shortAssets: list[PearAssetWeight] | None = None
+    triggerValue: str | None = None
+    triggerType: str | None = None
+    direction: str | None = None
+    assetName: str | None = None
+    marketCode: str | None = None
+    twapDuration: int | None = None
+    twapIntervalSeconds: int | None = None
+    randomizeExecution: bool | None = None
+    ladderConfig: PearLadderConfig | None = None
+    stopLoss: PearStopLossTakeProfit | None = None
+    takeProfit: PearStopLossTakeProfit | None = None
+    referralCode: str | None = None
+    walletAddress: str | None = Field(None, description="User's wallet address", alias="walletAddress")
+    
+    class Config:
+        populate_by_name = True
+
+
 class PearPairTradeRequest(BaseModel):
     """Request to create a pair trade on Pear Protocol."""
 
@@ -131,6 +180,7 @@ class PearPairTradeRequest(BaseModel):
     short_symbol: str = Field(..., description="Symbol to go short")
     size: float = Field(..., gt=0, description="Trade size in USD")
     leverage: float = Field(default=1.0, ge=1.0, le=10.0)
+    wallet_address: str | None = Field(None, description="User's wallet address")
 
 
 class PearPairTradeResponse(BaseModel):
@@ -230,21 +280,30 @@ class PearEIP712MessageResponse(BaseModel):
 
 
 class PearLoginRequest(BaseModel):
-    """Request to login with EIP-712 signature."""
+    """Request to login with EIP-712 signature.
+    
+    Note: Uses camelCase for clientId to match Pear API.
+    """
 
     method: str = Field(default="eip712", description="Authentication method")
     address: str = Field(..., description="Wallet address")
-    client_id: str = Field(default="APITRADER", description="Client ID")
-    details: dict[str, str] = Field(..., description="Contains signature")
+    clientId: str = Field(default="HLHackathon9", alias="client_id", description="Client ID")
+    details: dict[str, str] = Field(..., description="Contains signature and timestamp")
+    
+    class Config:
+        populate_by_name = True
 
 
 class PearAuthTokenResponse(BaseModel):
-    """Authentication token response."""
+    """Authentication token response from Pear API."""
 
-    access_token: str
-    refresh_token: str
-    expires_in: int | None = None
-    token_type: str = "Bearer"
+    accessToken: str = Field(..., alias="access_token")
+    refreshToken: str | None = Field(default=None, alias="refresh_token")
+    expiresIn: int | None = Field(default=None, alias="expires_in")
+    tokenType: str = Field(default="Bearer", alias="token_type")
+    
+    class Config:
+        populate_by_name = True
 
 
 class PearRefreshTokenRequest(BaseModel):
@@ -258,29 +317,70 @@ class AgentWalletStatus(str, Enum):
 
     NOT_FOUND = "NOT_FOUND"
     ACTIVE = "ACTIVE"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
     EXPIRED = "EXPIRED"
 
 
 class PearAgentWalletResponse(BaseModel):
-    """Agent wallet response."""
+    """Agent wallet response from Pear API.
+    
+    Maps various field names from API response.
+    """
 
+    agentWalletAddress: str | None = Field(default=None, alias="agent_wallet_address")
+    agentAddress: str | None = Field(default=None, alias="agent_address") 
     address: str | None = None
-    status: AgentWalletStatus
-    expires_at: datetime | None = None
-    created_at: datetime | None = None
+    status: AgentWalletStatus = AgentWalletStatus.NOT_FOUND
+    expiresAt: datetime | None = Field(default=None, alias="expires_at")
+    createdAt: datetime | None = Field(default=None, alias="created_at")
+    message: str | None = None
+    
+    class Config:
+        populate_by_name = True
+    
+    @property
+    def wallet_address(self) -> str | None:
+        """Get the agent wallet address from any of the possible fields."""
+        return self.agentWalletAddress or self.agentAddress or self.address
+
+
+class PearCreateAgentWalletRequest(BaseModel):
+    """Request to create an agent wallet."""
+    
+    clientId: str = Field(..., alias="client_id", description="Client ID")
+    
+    class Config:
+        populate_by_name = True
 
 
 class PearCreateAgentWalletResponse(BaseModel):
     """Response from creating an agent wallet."""
 
-    address: str
-    status: str
-    expires_at: datetime
-    created_at: datetime
+    agentWalletAddress: str | None = Field(default=None, alias="agent_wallet_address")
+    agentAddress: str | None = Field(default=None, alias="agent_address")
+    address: str | None = None
+    status: str = "PENDING_APPROVAL"
+    expiresAt: datetime | None = Field(default=None, alias="expires_at")
+    createdAt: datetime | None = Field(default=None, alias="created_at")
+    message: str | None = None
+    
+    class Config:
+        populate_by_name = True
+    
+    @property
+    def wallet_address(self) -> str | None:
+        """Get the agent wallet address from any of the possible fields."""
+        return self.agentWalletAddress or self.agentAddress or self.address
 
 
 class PearApproveAgentWalletRequest(BaseModel):
-    """Request to approve an agent wallet."""
+    """Request to approve an agent wallet on Hyperliquid.
+    
+    The approval is done directly on Hyperliquid, not through Pear API.
+    """
 
-    agent_address: str = Field(..., description="The agent wallet address to approve")
-    signature: str = Field(..., description="User's signature approving the agent wallet")
+    agentAddress: str = Field(..., alias="agent_address", description="The agent wallet address to approve")
+    agentName: str = Field(default="PearProtocol", alias="agent_name", description="Name for the agent")
+    
+    class Config:
+        populate_by_name = True
