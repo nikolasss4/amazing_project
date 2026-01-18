@@ -19,6 +19,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+import Markdown from 'react-native-markdown-display';
 import { GlassPanel } from '@ui/primitives/GlassPanel';
 import { Button } from '@ui/primitives/Button';
 import { theme } from '@app/theme';
@@ -45,6 +46,7 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
   const [isProcessing, setIsProcessing] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null); // Web Speech API
   const transcriptRef = useRef<string>(''); // Store transcript from Web Speech API
@@ -71,8 +73,13 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         clearTimeout(recordingTimeoutRef.current);
         recordingTimeoutRef.current = null;
       }
+      // Stop audio if playing when component unmounts
+      if (sound) {
+        sound.stopAsync().catch(console.error);
+        sound.unloadAsync().catch(console.error);
+      }
     };
-  }, []);
+  }, [sound]);
 
   // Web Speech API type declarations
   interface SpeechRecognition extends EventTarget {
@@ -427,9 +434,17 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         utterance.volume = 1.0;
         utterance.lang = 'en-US';
         
+        // Track browser TTS state
+        setIsPlayingAudio(true);
+        
         // Ensure speech is triggered
         utterance.onerror = (e) => {
           console.error('Speech synthesis error:', e);
+          setIsPlayingAudio(false);
+        };
+        
+        utterance.onend = () => {
+          setIsPlayingAudio(false);
         };
         
         window.speechSynthesis.speak(utterance);
@@ -442,6 +457,7 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         role: 'assistant',
         content: `I'm sorry, I encountered an error: ${errorMessage}`,
       });
+      setIsPlayingAudio(false);
     } finally {
       setIsProcessing(false);
     }
@@ -524,9 +540,17 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         utterance.volume = 1.0;
         utterance.lang = 'en-US';
         
+        // Track browser TTS state
+        setIsPlayingAudio(true);
+        
         // Ensure speech is triggered
         utterance.onerror = (e) => {
           console.error('Speech synthesis error:', e);
+          setIsPlayingAudio(false);
+        };
+        
+        utterance.onend = () => {
+          setIsPlayingAudio(false);
         };
         
         window.speechSynthesis.speak(utterance);
@@ -545,6 +569,7 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         role: 'assistant',
         content: `I'm sorry, I encountered an error: ${errorMessage}. Please try again.`,
       });
+      setIsPlayingAudio(false);
     } finally {
       setIsProcessing(false);
     }
@@ -572,16 +597,48 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
       );
 
       setSound(newSound);
+      setIsPlayingAudio(true);
 
       // Clean up when finished
       newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          newSound.unloadAsync();
-          setSound(null);
+        if (status.isLoaded) {
+          // Only stop when audio actually finishes, not when it's paused/stopped manually
+          if (status.didJustFinish) {
+            newSound.unloadAsync().catch(console.error);
+            setSound(null);
+            setIsPlayingAudio(false);
+          }
         }
       });
     } catch (error) {
       console.error('Failed to play audio:', error);
+      setIsPlayingAudio(false);
+      setSound(null);
+    }
+  };
+
+  const stopAudio = async () => {
+    // Stop Audio.Sound if playing
+    if (sound) {
+      try {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+        setSound(null);
+        setIsPlayingAudio(false);
+        if (Platform.OS !== 'web') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+      } catch (error) {
+        console.error('Error stopping audio:', error);
+        setSound(null);
+        setIsPlayingAudio(false);
+      }
+    }
+    
+    // Stop browser TTS if playing (web fallback)
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsPlayingAudio(false);
     }
   };
 
@@ -639,11 +696,13 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
     // Stop audio if playing
     if (sound) {
       try {
+        await sound.stopAsync();
         await sound.unloadAsync();
       } catch (error) {
         console.error('Error unloading sound on close:', error);
       }
       setSound(null);
+      setIsPlayingAudio(false);
     }
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
@@ -681,6 +740,11 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
                     <Text style={styles.headerTitle}>AI Assistant</Text>
                   </View>
                   <View style={styles.headerRight}>
+                    {isPlayingAudio && (
+                      <Pressable onPress={stopAudio} style={styles.iconButton}>
+                        <Ionicons name="stop-circle" size={24} color="#FF4444" />
+                      </Pressable>
+                    )}
                     {messages.length > 0 && (
                       <Pressable onPress={handleClear} style={styles.iconButton}>
                         <Ionicons name="trash-outline" size={20} color={theme.colors.textSecondary} />
@@ -731,14 +795,106 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
                           message.role === 'user' ? styles.userBubble : styles.assistantBubble,
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.messageText,
-                            message.role === 'user' ? styles.userText : styles.assistantText,
-                          ]}
-                        >
-                          {message.content}
-                        </Text>
+                        {message.role === 'user' ? (
+                          <Text
+                            style={[
+                              styles.messageText,
+                              styles.userText,
+                            ]}
+                          >
+                            {message.content}
+                          </Text>
+                        ) : (
+                          <Markdown
+                            style={{
+                              body: {
+                                color: theme.colors.textPrimary,
+                                fontSize: theme.typography.sizes.md,
+                                lineHeight: theme.typography.sizes.md * theme.typography.lineHeights.normal,
+                              },
+                              paragraph: {
+                                marginTop: 0,
+                                marginBottom: theme.spacing.sm,
+                              },
+                              heading1: {
+                                fontSize: theme.typography.sizes.xl,
+                                fontWeight: theme.typography.weights.bold,
+                                color: theme.colors.textPrimary,
+                                marginTop: theme.spacing.md,
+                                marginBottom: theme.spacing.sm,
+                              },
+                              heading2: {
+                                fontSize: theme.typography.sizes.lg,
+                                fontWeight: theme.typography.weights.bold,
+                                color: theme.colors.textPrimary,
+                                marginTop: theme.spacing.md,
+                                marginBottom: theme.spacing.sm,
+                              },
+                              heading3: {
+                                fontSize: theme.typography.sizes.md,
+                                fontWeight: theme.typography.weights.semibold,
+                                color: theme.colors.textPrimary,
+                                marginTop: theme.spacing.sm,
+                                marginBottom: theme.spacing.xs,
+                              },
+                              strong: {
+                                fontWeight: theme.typography.weights.bold,
+                                color: theme.colors.textPrimary,
+                              },
+                              em: {
+                                fontStyle: 'italic',
+                                color: theme.colors.textPrimary,
+                              },
+                              list_item: {
+                                marginBottom: theme.spacing.xs,
+                                flexDirection: 'row',
+                              },
+                              bullet_list: {
+                                marginBottom: theme.spacing.sm,
+                              },
+                              ordered_list: {
+                                marginBottom: theme.spacing.sm,
+                              },
+                              bullet_list_icon: {
+                                color: theme.colors.accent,
+                                marginRight: theme.spacing.sm,
+                              },
+                              code_inline: {
+                                backgroundColor: theme.colors.backgroundElevated,
+                                color: theme.colors.accent,
+                                paddingHorizontal: theme.spacing.xs,
+                                paddingVertical: 2,
+                                borderRadius: 4,
+                                fontFamily: 'monospace',
+                                fontSize: theme.typography.sizes.sm,
+                              },
+                              code_block: {
+                                backgroundColor: theme.colors.backgroundElevated,
+                                color: theme.colors.textPrimary,
+                                padding: theme.spacing.md,
+                                borderRadius: theme.borderRadius.md,
+                                marginVertical: theme.spacing.sm,
+                                fontFamily: 'monospace',
+                                fontSize: theme.typography.sizes.sm,
+                              },
+                              link: {
+                                color: theme.colors.accent,
+                                textDecorationLine: 'underline',
+                              },
+                              blockquote: {
+                                borderLeftWidth: 3,
+                                borderLeftColor: theme.colors.accent,
+                                paddingLeft: theme.spacing.md,
+                                marginVertical: theme.spacing.sm,
+                                backgroundColor: theme.colors.backgroundElevated,
+                                padding: theme.spacing.md,
+                                borderRadius: theme.borderRadius.sm,
+                              },
+            }}
+                          >
+                            {message.content}
+                          </Markdown>
+                        )}
                       </View>
                     ))
                   )}
@@ -754,7 +910,12 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
 
                 {/* Voice Recording Button */}
                 <View style={styles.voiceContainer}>
-                  {!isRecording ? (
+                  {isPlayingAudio ? (
+                    <Pressable onPress={stopAudio} style={styles.voiceButtonStop}>
+                      <Ionicons name="stop-circle" size={24} color="#FFFFFF" />
+                      <Text style={styles.voiceButtonTextStop}>Stop talking</Text>
+                    </Pressable>
+                  ) : !isRecording ? (
                     <Pressable
                       onPress={startRecording}
                       disabled={isProcessing || isLoading}
@@ -982,6 +1143,23 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.medium,
     color: '#FF4444',
+  },
+  voiceButtonStop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: '#FF4444',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#FF6666',
+  },
+  voiceButtonTextStop: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.medium,
+    color: '#FFFFFF',
   },
   inputContainer: {
     padding: theme.spacing.lg,

@@ -12,7 +12,7 @@ export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   googleGeminiApiKey: process.env.GOOGLE_GEMINI_API_KEY || '',
   elevenlabsApiKey: process.env.ELEVENLABS_API_KEY || '',
-  elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM',
+  elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID || 'xYWUvKNK6zWCgsdAK7Wi',
   useGemini: process.env.USE_GEMINI === 'true', // Set USE_GEMINI=true to use Gemini instead of OpenAI
 };
 

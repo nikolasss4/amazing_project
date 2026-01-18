@@ -161,13 +161,47 @@ class CommunityServiceClass {
    */
   async getNarratives(userId: string, limit: number = 20): Promise<CommunityNarrative[]> {
     try {
+      console.log(`[CommunityService] Fetching narratives from ${COMMUNITY_API_BASE_URL}/narratives`);
       const response = await axios.get(`${COMMUNITY_API_BASE_URL}/narratives`, {
         headers: this.getHeaders(userId),
         params: { limit },
       });
+      const narrativeCount = response.data?.length || 0;
+      console.log(`[CommunityService] Received ${narrativeCount} narratives`);
+      
+      if (narrativeCount === 0) {
+        console.warn('[CommunityService] No narratives found. To fix this:');
+        console.warn('  1. Run: cd backend && ./setup-community-data.sh');
+        console.warn('  2. Or manually: seed sources → ingest news → build narratives');
+        console.warn('  See COMMUNITY_DATA_SETUP.md for details');
+      }
+      
       return response.data;
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to get narratives');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to get narratives';
+      const statusCode = error.response?.status;
+      const statusText = error.response?.statusText;
+      
+      console.error('[CommunityService] Error fetching narratives:', {
+        message: errorMessage,
+        status: statusCode,
+        statusText,
+        url: `${COMMUNITY_API_BASE_URL}/narratives`,
+        userId,
+      });
+      
+      // Provide more helpful error messages
+      if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
+        throw new Error(`Cannot connect to backend at ${COMMUNITY_API_BASE_URL}. Make sure the backend server is running.`);
+      }
+      if (statusCode === 401) {
+        throw new Error('Authentication failed. Check your user ID.');
+      }
+      if (statusCode === 500) {
+        throw new Error(`Backend error: ${errorMessage}. Check backend logs and ensure API keys are configured.`);
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 
