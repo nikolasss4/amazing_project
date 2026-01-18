@@ -17,7 +17,7 @@ import { useLearnStore, useUserStore } from '@app/store';
 import { LeaderboardEntry } from '../models';
 import { QRCodeModal } from '../components/QRCodeModal';
 import { QRScannerModal } from '../components/QRScannerModal';
-import { CommunityService, MarketMessage } from '../services/CommunityService';
+import { CommunityService, MarketMessage, StanceType, StanceData } from '../services/CommunityService';
 import { CommunityNarrative, useNarratives } from '../hooks/useCommunityData';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
@@ -44,6 +44,8 @@ export const CommunityScreen: React.FC = () => {
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomInput, setRoomInput] = useState('');
   const [roomMessageType, setRoomMessageType] = useState<'bull' | 'bear' | 'question' | 'insight' | 'source'>('insight');
+  const [stanceData, setStanceData] = useState<StanceData | null>(null);
+  const [stanceLoading, setStanceLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -354,9 +356,24 @@ export const CommunityScreen: React.FC = () => {
         setRoomLoading(false);
       }
     };
+    const fetchStanceData = async () => {
+      if (!sheetData?.id) return;
+      const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+      try {
+        setStanceLoading(true);
+        const data = await CommunityService.getStance(effectiveUserId, sheetData.id);
+        setStanceData(data);
+      } catch (error: any) {
+        // Silently fail - stance is optional
+        setStanceData({ userStance: null, counts: { bullish: 0, bearish: 0, neutral: 0 } });
+      } finally {
+        setStanceLoading(false);
+      }
+    };
 
-    if (sheetVisible && sheetMode === 'room') {
+    if (sheetVisible && sheetMode === 'room' && sheetData?.id) {
       fetchRoomMessages();
+      fetchStanceData();
     }
   }, [sheetVisible, sheetMode, sheetData?.id, userId]);
 
@@ -413,6 +430,23 @@ export const CommunityScreen: React.FC = () => {
       // #endregion
       
       setRoomError(error.message || 'Failed to post message');
+    }
+  };
+
+  const handleCastStance = async (stance: StanceType) => {
+    if (!sheetData?.id) return;
+    
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    try {
+      await CommunityService.castStance(effectiveUserId, sheetData.id, stance);
+      // Refetch stance data to update counts
+      const data = await CommunityService.getStance(effectiveUserId, sheetData.id);
+      setStanceData(data);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error: any) {
+      setRoomError(error.message || 'Failed to cast stance');
+      showToast(error.message || 'Failed to cast stance');
     }
   };
 
@@ -1026,6 +1060,63 @@ export const CommunityScreen: React.FC = () => {
               <>
                 <Text style={styles.sheetTitle}>{sheetData.title}</Text>
                 <Text style={styles.sheetSubtitle}>Market room</Text>
+
+                {/* Stance Voting */}
+                <View style={styles.stanceContainer}>
+                  <View style={styles.stanceButtons}>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'bullish' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'bullish' ? 'rgba(16, 185, 129, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('bullish')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>🟢</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'bullish' && styles.stanceLabelActive]}>
+                        Bullish
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.bullish}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'bearish' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'bearish' ? 'rgba(239, 68, 68, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('bearish')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>🔴</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'bearish' && styles.stanceLabelActive]}>
+                        Bearish
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.bearish}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'neutral' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'neutral' ? 'rgba(107, 114, 128, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('neutral')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>⚪</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'neutral' && styles.stanceLabelActive]}>
+                        Neutral
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.neutral}</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
 
                 <View style={styles.messageTypeRow}>
                   {([
@@ -1976,6 +2067,47 @@ const styles = StyleSheet.create({
   },
   roomMessageDeleteButton: {
     padding: theme.spacing.xs,
+  },
+  stanceContainer: {
+    marginBottom: theme.spacing.md,
+  },
+  stanceButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    justifyContent: 'space-between',
+  },
+  stanceButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: theme.spacing.xs,
+  },
+  stanceButtonActive: {
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 2,
+  },
+  stanceEmoji: {
+    fontSize: theme.typography.sizes.md,
+  },
+  stanceLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.typography.weights.medium,
+  },
+  stanceLabelActive: {
+    color: theme.colors.textPrimary,
+    fontWeight: theme.typography.weights.semibold,
+  },
+  stanceCount: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textTertiary,
+    fontWeight: theme.typography.weights.medium,
   },
   roomMessageText: {
     fontSize: theme.typography.sizes.sm,
