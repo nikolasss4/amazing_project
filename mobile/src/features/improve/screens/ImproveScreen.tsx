@@ -281,31 +281,32 @@ export const ImproveScreen: React.FC = () => {
     } else {
       backgroundRef.current?.flashRed();
       
-      // Animate streak points transfer to lightning before resetting
+      // Animate streak points transfer to profile picture (Avatar) before resetting
       const currentStreakValue = calculateStreakValue(streak);
       if (currentStreakValue > 0) {
         setTransferAmount(currentStreakValue);
         setShowStreakTransfer(true);
         
-        // Reset animation values
-        streakTransferX.value = 100; // Start from right (near streak chip)
+        // Reset animation values - start from right side (near streak chip)
+        streakTransferX.value = 60;
         streakTransferY.value = 0;
         streakTransferScale.value = 1;
         streakTransferOpacity.value = 1;
         
-        // Animate flying to the left (to lightning chip)
-        streakTransferX.value = withTiming(-100, { duration: 600, easing: Easing.out(Easing.ease) });
+        // Animate flying to profile picture (top-left corner where Avatar is)
+        // Move left and up in an arc trajectory
+        streakTransferX.value = withTiming(-140, { duration: 700, easing: Easing.out(Easing.ease) });
         streakTransferY.value = withSequence(
-          withTiming(-30, { duration: 300, easing: Easing.out(Easing.ease) }),
-          withTiming(0, { duration: 300, easing: Easing.in(Easing.ease) })
+          withTiming(-50, { duration: 350, easing: Easing.out(Easing.ease) }), // Arc up
+          withTiming(-25, { duration: 350, easing: Easing.in(Easing.ease) }) // Settle at avatar height
         );
         streakTransferScale.value = withSequence(
-          withTiming(1.3, { duration: 300 }),
-          withTiming(0.8, { duration: 300 })
+          withTiming(1.4, { duration: 350 }), // Grow during arc
+          withTiming(0.6, { duration: 350 }) // Shrink as it arrives
         );
-        streakTransferOpacity.value = withDelay(400, withTiming(0, { duration: 200 }));
+        streakTransferOpacity.value = withDelay(500, withTiming(0, { duration: 200 }));
         
-        // Pulse the lightning chip when points arrive
+        // Pulse effect on avatar when points arrive
         setTimeout(() => {
           lightningPulse.value = withSequence(
             withSpring(1.3, { damping: 5, stiffness: 200 }),
@@ -314,7 +315,7 @@ export const ImproveScreen: React.FC = () => {
           // Add the streak points to total XP
           addXP(currentStreakValue);
           setShowStreakTransfer(false);
-        }, 600);
+        }, 700);
       }
       
       resetStreak();
@@ -544,18 +545,14 @@ export const ImproveScreen: React.FC = () => {
                     </View>
                   </View>
 
-                  {/* Right: Solution actions */}
+                  {/* Right: Next button - larger and centered to right border */}
                   <View style={styles.actionsContainer}>
-                    <LiquidGlassButton
-                      icon="refresh"
-                      variant="secondary"
-                      onPress={handleFlipBack}
-                    />
                     <LiquidGlassButton
                       icon="arrow-forward"
                       variant="primary"
                       color={theme.colors.accent}
                       onPress={handleNext}
+                      size="large"
                     />
                   </View>
                 </View>
@@ -679,6 +676,7 @@ interface LiquidGlassButtonProps {
   selected?: boolean;
   disabled?: boolean;
   color?: string;
+  size?: 'normal' | 'large';
   onPress: () => void;
 }
 
@@ -689,6 +687,7 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
   selected = false,
   disabled = false,
   color,
+  size = 'normal',
   onPress,
 }) => {
   const scale = useSharedValue(1);
@@ -725,6 +724,9 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
 
   const isPrimary = variant === 'primary';
   const activeColor = color || theme.colors.accent;
+  const isLarge = size === 'large';
+  const buttonSize = isLarge ? 70 : 50;
+  const iconSize = isLarge ? 28 : 20;
 
   return (
     <AnimatedPressable
@@ -736,6 +738,8 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
         styles.glassButton,
         isPrimary ? styles.glassButtonPrimary : styles.glassButtonSecondary,
         {
+          width: buttonSize,
+          height: buttonSize,
           borderColor: selected ? activeColor : (isPrimary ? `${activeColor}80` : theme.colors.glassBorder),
           backgroundColor: selected ? activeColor : (isPrimary ? `${activeColor}1A` : 'rgba(255, 255, 255, 0.05)'),
         },
@@ -747,7 +751,7 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
         {icon && (
           <Ionicons
             name={icon}
-            size={20}
+            size={iconSize}
             color={selected ? '#FFF' : (disabled ? theme.colors.textTertiary : theme.colors.textPrimary)}
           />
         )}
@@ -975,13 +979,11 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: theme.typography.weights.regular,
   },
-  // Actions (right side)
+  // Actions (right side) - Next button centered to right border
   actionsContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'flex-start',
-    gap: theme.spacing.sm,
+    width: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 100, // Ensure buttons are above other elements
     elevation: 100, // Android elevation
   },
@@ -1068,8 +1070,6 @@ const styles = StyleSheet.create({
   },
   // Liquid Glass Button styles
   glassButton: {
-    width: 50,
-    height: 50,
     borderRadius: theme.borderRadius.xl,
     borderWidth: 2,
     position: 'relative',

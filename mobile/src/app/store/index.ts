@@ -112,21 +112,33 @@ export interface Message {
   screenshot?: string;
 }
 
+// Chat history expiration time (5 minutes in milliseconds)
+const CHAT_HISTORY_EXPIRATION_MS = 5 * 60 * 1000;
+
 interface AssistantState {
   isOpen: boolean;
   messages: Message[];
   screenshotUri: string | null;
+  lastActivityTimestamp: number | null;
   setIsOpen: (isOpen: boolean) => void;
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void;
   setScreenshot: (uri: string | null) => void;
   clearChat: () => void;
+  checkAndClearExpiredChat: () => void;
 }
 
-export const useAssistantStore = create<AssistantState>((set) => ({
+export const useAssistantStore = create<AssistantState>((set, get) => ({
   isOpen: false,
   messages: [],
   screenshotUri: null,
-  setIsOpen: (isOpen) => set({ isOpen }),
+  lastActivityTimestamp: null,
+  setIsOpen: (isOpen) => {
+    // When opening, check if chat history has expired
+    if (isOpen) {
+      get().checkAndClearExpiredChat();
+    }
+    set({ isOpen });
+  },
   addMessage: (message) =>
     set((state) => ({
       messages: [
@@ -137,9 +149,23 @@ export const useAssistantStore = create<AssistantState>((set) => ({
           timestamp: new Date(),
         },
       ],
+      lastActivityTimestamp: Date.now(), // Update activity timestamp
     })),
   setScreenshot: (uri) => set({ screenshotUri: uri }),
-  clearChat: () => set({ messages: [], screenshotUri: null }),
+  clearChat: () => set({ messages: [], screenshotUri: null, lastActivityTimestamp: null }),
+  checkAndClearExpiredChat: () => {
+    const state = get();
+    const now = Date.now();
+    
+    // If there are messages and they've expired
+    if (state.lastActivityTimestamp && state.messages.length > 0) {
+      const timeSinceLastActivity = now - state.lastActivityTimestamp;
+      if (timeSinceLastActivity > CHAT_HISTORY_EXPIRATION_MS) {
+        // Clear expired chat history
+        set({ messages: [], screenshotUri: null, lastActivityTimestamp: null });
+      }
+    }
+  },
 }));
 
 // Wallet Store

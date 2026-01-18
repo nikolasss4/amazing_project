@@ -733,15 +733,16 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
   };
 
   return (
-    <Modal visible={isOpen} animationType="fade" transparent onRequestClose={handleClose}>
-      <Animated.View entering={FadeIn} style={styles.modalOverlay}>
-        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.container}
-          >
-            <Animated.View entering={SlideInDown} style={styles.content}>
-              <GlassPanel style={styles.panel}>
+    <Modal visible={isOpen} animationType="none" transparent onRequestClose={handleClose}>
+      <View style={styles.modalBackground}>
+        <Animated.View entering={FadeIn.duration(200)} style={styles.modalOverlay}>
+          <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.container}
+            >
+              <Animated.View entering={SlideInDown.duration(300).delay(50)} style={styles.content}>
+                <View style={styles.panelSolid}>
                 {/* Header */}
                 <View style={styles.header}>
                   <View style={styles.headerLeft}>
@@ -977,19 +978,24 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
                     </Pressable>
                   </View>
                 </View>
-              </GlassPanel>
-            </Animated.View>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Animated.View>
+                </View>
+              </Animated.View>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </Animated.View>
+      </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  modalBackground: {
+    flex: 1,
+    backgroundColor: '#000000', // Solid black background to prevent see-through
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: theme.colors.overlayStrong,
+    backgroundColor: 'rgba(10, 10, 14, 0.98)', // Nearly opaque dark overlay
   },
   safeArea: {
     flex: 1,
@@ -1004,6 +1010,15 @@ const styles = StyleSheet.create({
   panel: {
     flex: 1,
     padding: 0,
+  },
+  panelSolid: {
+    flex: 1,
+    padding: 0,
+    backgroundColor: 'rgba(20, 20, 28, 1)', // Solid dark background
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',

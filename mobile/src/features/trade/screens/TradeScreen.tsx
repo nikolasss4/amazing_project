@@ -28,7 +28,7 @@ import { GlowingBorder } from '@ui/primitives/GlowingBorder';
 import { Button } from '@ui/primitives/Button';
 import { theme } from '@app/theme';
 import { useTradeStore, useWalletStore } from '@app/store';
-import { TradeService, PearOpenPosition } from '../services/TradeService';
+import { TradeService, PearOpenPosition, PearAssetPosition } from '../services/TradeService';
 import { TradingViewChart } from '../components/TradingViewChart';
 import { Avatar } from '../../community/components/Avatar';
 
@@ -102,31 +102,86 @@ export const TradeScreen: React.FC = () => {
   // Wallet state
   const { isConnected, walletAddress, connect, disconnect, initialize, getAccessToken } = useWalletStore();
 
-  // Fetch open positions from Pear Protocol
+  // Mock positions data for demonstration
+  const MOCK_POSITIONS: PearOpenPosition[] = [
+    {
+      positionId: 'pos_btc_eth_combo_001',
+      address: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+      pearExecutionFlag: 'executed',
+      stopLoss: null,
+      takeProfit: null,
+      entryRatio: 1.0,
+      markRatio: 1.04,
+      entryPriceRatio: 1.0,
+      markPriceRatio: 1.04,
+      entryPositionValue: 50.00,
+      positionValue: 52.00,
+      marginUsed: 10.00,
+      unrealizedPnl: 2.00,
+      unrealizedPnlPercentage: 0.04,
+      longAssets: [{ coin: 'BTC', entryPrice: 42150.00, actualSize: 0.00071, leverage: 5, marginUsed: 6, positionValue: 31.20, unrealizedPnl: 1.20, entryPositionValue: 30, initialWeight: 60, fundingPaid: 0.01 }],
+      shortAssets: [{ coin: 'ETH', entryPrice: 2580.00, actualSize: 0.00775, leverage: 5, marginUsed: 4, positionValue: 20.80, unrealizedPnl: 0.80, entryPositionValue: 20, initialWeight: 40, fundingPaid: 0.01 }],
+      createdAt: '2026-01-15T10:30:00Z',
+      updatedAt: '2026-01-18T14:22:00Z',
+    },
+    {
+      positionId: 'pos_xrp_bnb_sol_002',
+      address: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+      pearExecutionFlag: 'executed',
+      stopLoss: null,
+      takeProfit: null,
+      entryRatio: 1.0,
+      markRatio: 0.97,
+      entryPriceRatio: 1.0,
+      markPriceRatio: 0.97,
+      entryPositionValue: 100.00,
+      positionValue: 97.00,
+      marginUsed: 20.00,
+      unrealizedPnl: -3.00,
+      unrealizedPnlPercentage: -0.03,
+      longAssets: [
+        { coin: 'BNB', entryPrice: 312.00, actualSize: 0.064, leverage: 5, marginUsed: 4, positionValue: 19.60, unrealizedPnl: -0.40, entryPositionValue: 20, initialWeight: 20, fundingPaid: 0.01 },
+        { coin: 'SOL', entryPrice: 185.00, actualSize: 0.054, leverage: 5, marginUsed: 2, positionValue: 10.30, unrealizedPnl: 0.30, entryPositionValue: 10, initialWeight: 10, fundingPaid: 0.01 },
+      ],
+      shortAssets: [{ coin: 'XRP', entryPrice: 2.45, actualSize: 28.57, leverage: 5, marginUsed: 14, positionValue: 67.10, unrealizedPnl: -2.90, entryPositionValue: 70, initialWeight: 70, fundingPaid: 0.02 }],
+      createdAt: '2026-01-16T15:45:00Z',
+      updatedAt: '2026-01-18T14:22:00Z',
+    },
+    {
+      positionId: 'pos_btc_2024_003',
+      address: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+      pearExecutionFlag: 'executed',
+      stopLoss: null,
+      takeProfit: null,
+      entryRatio: 1.0,
+      markRatio: 1.05,
+      entryPriceRatio: 42150.00,
+      markPriceRatio: 43250.00,
+      entryPositionValue: 50.00,
+      positionValue: 53.75,
+      marginUsed: 10.00,
+      unrealizedPnl: 3.75,
+      unrealizedPnlPercentage: 0.075,
+      longAssets: [{ coin: 'BTC', entryPrice: 42150.00, actualSize: 0.00118, leverage: 5, marginUsed: 10, positionValue: 53.75, unrealizedPnl: 3.75, entryPositionValue: 50, initialWeight: 100, fundingPaid: 0.01 }],
+      shortAssets: [],
+      createdAt: '2026-01-17T09:15:00Z',
+      updatedAt: '2026-01-18T14:22:00Z',
+    },
+  ];
+
+  // Load mock positions (no actual API call)
   const fetchOpenPositions = useCallback(async () => {
-    console.log('Fetching open positions...');
+    console.log('Loading mock positions...');
     setIsLoadingPositions(true);
     setPositionsError(null);
     
-    try {
-      const accessToken = getAccessToken();
-      const response = await TradeService.getOpenPositions(accessToken || undefined);
-      
-      if (response.success) {
-        setOpenPositions(response.positions);
-        console.log(`Loaded ${response.positions.length} open positions`);
-      } else {
-        setPositionsError(response.error || 'Failed to load positions');
-        console.error('Failed to load positions:', response.error);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to load positions';
-      setPositionsError(errorMsg);
-      console.error('Error fetching positions:', error);
-    } finally {
+    // Simulate a brief loading state
+    setTimeout(() => {
+      setOpenPositions(MOCK_POSITIONS);
       setIsLoadingPositions(false);
-    }
-  }, [getAccessToken]);
+      console.log(`Loaded ${MOCK_POSITIONS.length} mock positions`);
+    }, 500);
+  }, []);
 
   useEffect(() => {
     initialize();
@@ -744,7 +799,7 @@ export const TradeScreen: React.FC = () => {
                         {/* Position Stats */}
                         <View style={styles.positionStats}>
                           <View style={styles.positionStat}>
-                            <Text style={styles.positionStatLabel}>Position Value</Text>
+                            <Text style={styles.positionStatLabel}>Current Value</Text>
                             <Text style={styles.positionStatValue}>
                               ${position.positionValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
@@ -753,12 +808,6 @@ export const TradeScreen: React.FC = () => {
                             <Text style={styles.positionStatLabel}>Entry Value</Text>
                             <Text style={styles.positionStatValue}>
                               ${position.entryPositionValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </Text>
-                          </View>
-                          <View style={styles.positionStat}>
-                            <Text style={styles.positionStatLabel}>Margin Used</Text>
-                            <Text style={styles.positionStatValue}>
-                              ${position.marginUsed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
                           </View>
                         </View>
