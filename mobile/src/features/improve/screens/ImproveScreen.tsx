@@ -299,7 +299,6 @@ export const ImproveScreen: React.FC = () => {
         <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Improve</Text>
           <View style={styles.headerRight}>
             {/* Streak indicator with pulse animation */}
             <Animated.View style={[styles.streakChipContainer, streakAnimatedStyle]}>
@@ -554,15 +553,9 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
         disabled={disabled}
         style={[
           styles.upDownButton,
-          { borderColor: `${buttonColor}80` },
-          selected && { 
-            borderColor: buttonColor,
-            borderWidth: 1.5,
-            shadowColor: buttonColor,
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.4,
-            shadowRadius: 12,
-            elevation: 6,
+          {
+            borderColor: selected ? buttonColor : `${buttonColor}80`,
+            backgroundColor: selected ? buttonColor : `${buttonColor}1A`,
           },
           disabled && styles.upDownButtonDisabled,
         ]}
@@ -570,36 +563,11 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
         android_ripple={null}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
-        {/* Glass button background - wrapped in View to clip properly */}
-        <View style={styles.upDownButtonBackground}>
-          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
-          {/* Colored gradient overlay */}
-          <LinearGradient
-            colors={selected 
-              ? [`${buttonColor}30`, `${buttonColor}15`, 'transparent']
-              : [`${buttonColor}15`, 'transparent', 'transparent']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        </View>
-        {/* Inner highlight for depth */}
-        {selected && (
-          <View 
-            style={[
-              styles.buttonInnerGlow, 
-              { backgroundColor: `${buttonColor}20` }
-            ]} 
-            pointerEvents="none" 
-          />
-        )}
         <View style={styles.upDownButtonContent} pointerEvents="none">
           <Ionicons
             name={icon as keyof typeof Ionicons.glyphMap}
             size={24}
-            color={disabled ? theme.colors.textTertiary : (selected ? buttonColor : `${buttonColor}E0`)}
+            color={disabled ? theme.colors.textTertiary : (selected ? '#FFF' : `${buttonColor}E0`)}
           />
         </View>
       </Pressable>
@@ -671,52 +639,20 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
       style={[
         styles.glassButton,
         isPrimary ? styles.glassButtonPrimary : styles.glassButtonSecondary,
-        selected && { 
-          borderColor: activeColor,
-          borderWidth: 1.5,
-          shadowColor: activeColor,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.4,
-          shadowRadius: 12,
-          elevation: 6,
+        {
+          borderColor: selected ? activeColor : (isPrimary ? `${activeColor}80` : theme.colors.glassBorder),
+          backgroundColor: selected ? activeColor : (isPrimary ? `${activeColor}1A` : 'rgba(255, 255, 255, 0.05)'),
         },
         disabled && styles.glassButtonDisabled,
         animatedStyle,
       ]}
     >
-      {/* Glass button background - wrapped in View to clip properly */}
-      <View style={styles.glassButtonBackground}>
-        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
-        {/* Colored gradient overlay */}
-        <LinearGradient
-          colors={selected 
-            ? [`${activeColor}30`, `${activeColor}15`, 'transparent']
-            : isPrimary 
-              ? ['rgba(255, 255, 255, 0.08)', 'transparent', 'transparent']
-              : ['rgba(255, 255, 255, 0.05)', 'transparent', 'transparent']
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-      </View>
-      {/* Inner highlight for depth */}
-      {selected && (
-        <View 
-          style={[
-            styles.glassButtonInnerGlow, 
-            { backgroundColor: `${activeColor}20` }
-          ]} 
-          pointerEvents="none" 
-        />
-      )}
       <View style={styles.glassButtonContent} pointerEvents="none">
         {icon && (
           <Ionicons
             name={icon}
             size={20}
-            color={selected ? activeColor : (disabled ? theme.colors.textTertiary : theme.colors.textPrimary)}
+            color={selected ? '#FFF' : (disabled ? theme.colors.textTertiary : theme.colors.textPrimary)}
           />
         )}
         {label && (
@@ -749,7 +685,7 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
   },
@@ -923,28 +859,13 @@ const styles = StyleSheet.create({
   upDownButton: {
     width: 70,
     height: 85,
-    borderRadius: theme.borderRadius.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    backgroundColor: theme.colors.glassBackground,
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 2,
     zIndex: 101,
     elevation: 101,
   },
   upDownButtonDisabled: {
     opacity: 0.4,
-  },
-  upDownButtonBackground: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: theme.borderRadius.md,
-    overflow: 'hidden',
-  },
-  buttonInnerGlow: {
-    position: 'absolute',
-    top: 2,
-    left: 2,
-    right: 2,
-    bottom: 2,
-    borderRadius: theme.borderRadius.md - 2,
   },
   upDownButtonContent: {
     flex: 1,
@@ -1011,37 +932,9 @@ const styles = StyleSheet.create({
   glassButton: {
     width: 50,
     height: 50,
-    borderRadius: theme.borderRadius.md,
-    overflow: 'hidden',
-    borderWidth: 1,
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 2,
     position: 'relative',
-  },
-  glassButtonBackground: {
-    width: 50,
-    height: 50,
-    borderRadius: theme.borderRadius.md,
-    overflow: 'hidden',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  glassButtonPrimary: {
-    borderColor: `${theme.colors.accent}80`,
-    backgroundColor: theme.colors.glassBackground,
-  },
-  glassButtonSecondary: {
-    borderColor: theme.colors.glassBorder,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  glassButtonInnerGlow: {
-    position: 'absolute',
-    top: 2,
-    left: 2,
-    right: 2,
-    bottom: 2,
-    borderRadius: theme.borderRadius.md - 2,
   },
   glassButtonDisabled: {
     opacity: 0.4,
