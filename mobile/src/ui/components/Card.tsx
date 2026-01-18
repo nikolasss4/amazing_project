@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, ViewStyle, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -30,7 +30,14 @@ export const Card: React.FC<CardProps> = ({ children, onPress, style }) => {
   const handlePressIn = () => {
     if (onPress) {
       scale.value = withSpring(0.98, { damping: 15, stiffness: 300 });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Safe haptic call - no-op on web
+      if (Platform.OS !== 'web') {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch (error) {
+          // Silently fail if haptics are not available
+        }
+      }
     }
   };
 

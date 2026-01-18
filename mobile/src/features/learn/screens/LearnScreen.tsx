@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -55,9 +55,16 @@ export const LearnScreen: React.FC = () => {
     const correct = answer === currentScenario.correctAnswer;
     setIsCorrect(correct);
 
-    Haptics.impactAsync(
-      correct ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light
-    );
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(
+          correct ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light
+        );
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
 
     // Flip card
     flipRotation.value = withTiming(1, { duration: 600 }, () => {
