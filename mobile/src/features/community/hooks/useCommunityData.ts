@@ -85,9 +85,11 @@ export function useNarratives(
       setLoading(true);
       setError(null);
       const narratives = await CommunityService.getNarratives(effectiveUserId, limit);
-      setData(narratives);
+      // Ensure narratives is always an array to prevent "array is not iterable" errors
+      setData(Array.isArray(narratives) ? narratives : []);
     } catch (err: any) {
       setError(err.message || 'Failed to load narratives');
+      setData([]); // Set empty array on error
     } finally {
       setLoading(false);
     }

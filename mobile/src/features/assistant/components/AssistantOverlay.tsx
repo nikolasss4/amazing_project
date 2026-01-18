@@ -138,9 +138,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
   };
 
   const startRecording = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:startRecording',message:'Starting recording function',data:{platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-start',hypothesisId:'F'})}).catch(()=>{});
-    // #endregion
 
     // Use Web Speech API on web, fallback to audio recording on native
     if (Platform.OS === 'web') {
@@ -246,9 +243,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
       // Request permissions
       const permission = await Audio.requestPermissionsAsync();
       console.log('Permission status:', permission);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:startRecording',message:'Permission requested',data:{granted:permission.granted,status:permission.status},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-start',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
 
       if (!permission.granted) {
         addMessage({
@@ -272,9 +266,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
       );
 
       console.log('Recording created:', newRecording);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:startRecording',message:'Recording created successfully',data:{hasRecording:!!newRecording},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-start',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
 
       setRecording(newRecording);
       setIsRecording(true);
@@ -287,9 +278,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         stopRecording();
       }, 30000);
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:startRecording',message:'Recording start error',data:{error:error?.message,errorName:error?.name,errorStack:error?.stack?.substring(0,300)},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-start',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       console.error('Failed to start recording:', error);
       const errorMessage = error?.message || 'Unknown error';
       addMessage({
@@ -302,9 +290,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
   };
 
   const stopRecording = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:stopRecording',message:'Stop recording called',data:{hasRecording:!!recording,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-stop',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
 
     // Stop Web Speech API on web
     if (Platform.OS === 'web' && recognitionRef.current) {
@@ -331,16 +316,10 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
     }
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:stopRecording',message:'Stopping recording',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-stop',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
 
       await currentRecording.stopAndUnloadAsync();
       const uri = currentRecording.getURI();
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:stopRecording',message:'Recording stopped, got URI',data:{uri:uri?.substring(0,100)||'null'},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-stop',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
       
       if (!uri) {
         throw new Error('Recording URI is null');
@@ -349,9 +328,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
       // Process the voice query (native platforms still use audio)
       await processVoiceQuery(uri);
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:stopRecording',message:'Stop recording error',data:{error:error?.message,errorName:error?.name,errorStack:error?.stack?.substring(0,300)},timestamp:Date.now(),sessionId:'debug-session',runId:'recording-stop',hypothesisId:'G'})}).catch(()=>{});
-      // #endregion
       console.error('Failed to stop recording:', error);
       addMessage({
         role: 'assistant',
@@ -426,15 +402,38 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         content: `🎤 ${transcript}`,
       });
 
-      // Add assistant response
+      // Format and add assistant response
+      const formattedResponse = response.responseText
+        .replace(/\n{3,}/g, '\n\n') // Remove excessive line breaks
+        .trim();
+      
       addMessage({
         role: 'assistant',
-        content: response.responseText,
+        content: formattedResponse,
       });
 
-      // Play audio response
+      // Play audio response (use browser TTS as fallback if no audio)
+      // Always try to speak the response
       if (response.audioBase64) {
         await playAudioResponse(response.audioBase64);
+      } else if (Platform.OS === 'web' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        // Fallback to browser's built-in text-to-speech
+        // Stop any ongoing speech first
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(formattedResponse);
+        utterance.rate = 0.9; // Slightly slower for better clarity
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+        
+        // Ensure speech is triggered
+        utterance.onerror = (e) => {
+          console.error('Speech synthesis error:', e);
+        };
+        
+        window.speechSynthesis.speak(utterance);
+        console.log('Browser TTS started for:', formattedResponse.substring(0, 50));
       }
     } catch (error: any) {
       console.error('Voice query error:', error);
@@ -450,9 +449,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
 
   // Process voice query with audio (for native platforms)
   const processVoiceQuery = async (audioUri: string) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:processVoiceQuery',message:'Starting voice query processing',data:{audioUri,hasScreenshot:!!screenshotUri,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     if (!screenshotUri) {
       await captureScreenshot();
@@ -466,16 +462,10 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
     }
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:processVoiceQuery',message:'Reading audio file',data:{audioUri,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
 
       // Convert audio to base64 (web-compatible)
       const audioBase64 = await readFileAsBase64(audioUri);
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:processVoiceQuery',message:'Audio converted to base64',data:{audioBase64Length:audioBase64?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
 
       // Convert screenshot to base64 if it's a file URI
       let screenshotBase64 = '';
@@ -492,9 +482,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
       // Send to backend (always provide userId, use fallback if not set)
       const userIdToSend = userId || 'demo-user-001';
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:processVoiceQuery',message:'Sending to backend',data:{audioBase64Length:audioBase64?.length,screenshotBase64Length:screenshotBase64?.length,currentPage,userId:userId,userIdToSend},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
 
       const response = await AssistantService.voiceQuery(
         {
@@ -505,9 +492,6 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         userIdToSend
       );
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:processVoiceQuery',message:'Backend response received',data:{hasTranscript:!!response.transcript,hasResponseText:!!response.responseText,hasAudio:!!response.audioBase64},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
 
       // Add user message (transcript)
       addMessage({
@@ -515,18 +499,40 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         content: `🎤 ${response.transcript}`,
       });
 
-      // Add assistant response (text)
+      // Format and add assistant response (text)
+      const formattedResponse = response.responseText
+        .replace(/\n{3,}/g, '\n\n') // Remove excessive line breaks
+        .trim();
+      
       addMessage({
         role: 'assistant',
-        content: response.responseText,
+        content: formattedResponse,
       });
 
-      // Play audio response
-      await playAudioResponse(response.audioBase64);
+      // Play audio response (use browser TTS as fallback if no audio)
+      // Always try to speak the response
+      if (response.audioBase64) {
+        await playAudioResponse(response.audioBase64);
+      } else if (Platform.OS === 'web' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        // Fallback to browser's built-in text-to-speech
+        // Stop any ongoing speech first
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(formattedResponse);
+        utterance.rate = 0.9; // Slightly slower for better clarity
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+        
+        // Ensure speech is triggered
+        utterance.onerror = (e) => {
+          console.error('Speech synthesis error:', e);
+        };
+        
+        window.speechSynthesis.speak(utterance);
+        console.log('Browser TTS started for:', formattedResponse.substring(0, 50));
+      }
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantOverlay.tsx:processVoiceQuery',message:'Voice query error',data:{error:error?.message,errorStack:error?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       console.error('Voice query error:', error);
       let errorMessage = error?.message || 'Unknown error';
       

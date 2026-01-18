@@ -60,20 +60,9 @@ class AssistantServiceClass {
    * Send voice query with screenshot
    */
   async voiceQuery(request: VoiceQueryRequest, userId?: string): Promise<VoiceQueryResponse> {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'Starting voice query API call',data:{apiBaseUrl:API_BASE_URL,hasUserId:!!userId,audioBase64Length:request.audioBase64?.length,screenshotBase64Length:request.screenshotBase64?.length,page:request.page},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
-
     try {
       const url = `${API_BASE_URL}/api/voice/query`;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'Making fetch request',data:{url,method:'POST',hasUserId:!!userId},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
-
       const userIdHeader = userId || 'demo-user-001';
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'Fetch request with headers',data:{url,userId,userIdHeader,headers:{'Content-Type':'application/json','x-user-id':userIdHeader}},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'H'})}).catch(()=>{});
-      // #endregion
       
       const response = await fetch(url, {
         method: 'POST',
@@ -84,26 +73,17 @@ class AssistantServiceClass {
         body: JSON.stringify({
           screenshotBase64: request.screenshotBase64,
           audioBase64: request.audioBase64,
+          transcript: request.transcript, // Include transcript when using Web Speech API
           page: request.page,
         }),
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'Fetch response received',data:{status:response.status,statusText:response.statusText,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
-
       if (!response.ok) {
         const errorText = await response.text();
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'API error response',data:{status:response.status,errorText:errorText.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         throw new Error(`API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'API response parsed',data:{hasTranscript:!!data.transcript,hasResponseText:!!data.responseText,hasAudioBase64:!!data.audioBase64},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
 
       return {
         audioBase64: data.audioBase64,
@@ -111,9 +91,6 @@ class AssistantServiceClass {
         responseText: data.responseText,
       };
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssistantService.ts:voiceQuery',message:'Voice query API error',data:{error:error?.message,errorName:error?.name,errorStack:error?.stack?.substring(0,300)},timestamp:Date.now(),sessionId:'debug-session',runId:'api-call',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       console.error('AssistantService voiceQuery error:', error);
       throw error;
     }

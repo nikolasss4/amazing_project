@@ -87,7 +87,7 @@ async function analyzeWithVision(transcript: string, screenshotBase64: string, p
   if (useGemini && geminiApiKey) {
     // Use Google Gemini
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -197,8 +197,14 @@ export async function processVoiceQuery(request: VoiceQueryRequest): Promise<Voi
     const responseText = await analyzeWithVision(transcript, request.screenshotBase64, request.page);
     console.log('LLM Response:', responseText);
 
-    // Step 3: Text-to-Speech
-    const audioBase64 = await textToSpeech(responseText);
+    // Step 3: Text-to-Speech (optional - fallback to empty if fails)
+    let audioBase64 = '';
+    try {
+      audioBase64 = await textToSpeech(responseText);
+    } catch (error: any) {
+      console.warn('Text-to-speech failed, continuing without audio:', error.message);
+      // Continue without audio - frontend can use browser TTS as fallback
+    }
 
     return {
       audioBase64,

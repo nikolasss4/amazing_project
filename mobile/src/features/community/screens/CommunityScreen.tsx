@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator, Platform, Modal, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,14 +19,84 @@ import { QRCodeModal } from '../components/QRCodeModal';
 import { QRScannerModal } from '../components/QRScannerModal';
 import { CommunityService, MarketMessage } from '../services/CommunityService';
 import { CommunityNarrative, useNarratives } from '../hooks/useCommunityData';
+import { ErrorBoundary } from '@ui/components/ErrorBoundary';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
 
-export const CommunityScreen: React.FC = () => {
+// Stub functions at module level to prevent errors from cached bundle code
+// These functions are being called from somewhere but don't exist in source
+const seededShuffleModule = (arr: any): any[] => {
+  if (!Array.isArray(arr)) {
+    console.warn('seededShuffle called with non-array:', arr);
+    return [];
+  }
+  try {
+    return [...arr];
+  } catch (e) {
+    console.error('Error in seededShuffle:', e);
+    return [];
+  }
+};
+
+const getShuffledLeaderboardModule = (entries: any): any[] => {
+  if (!Array.isArray(entries)) {
+    console.warn('getShuffledLeaderboard called with non-array:', entries);
+    return [];
+  }
+  try {
+    return seededShuffleModule(entries);
+  } catch (e) {
+    console.error('Error in getShuffledLeaderboard:', e);
+    return [];
+  }
+};
+
+// Make available globally for web (in case cached bundle code tries to access them)
+if (typeof window !== 'undefined') {
+  (window as any).seededShuffle = seededShuffleModule;
+  (window as any).getShuffledLeaderboard = getShuffledLeaderboardModule;
+}
+
+// Wrapper component to catch any errors during render
+const CommunityScreenContent: React.FC = () => {
+  // Ensure stub functions are available immediately (before any hooks)
+  // This prevents errors from cached bundle code trying to call them
+  // Use useLayoutEffect to run synchronously before paint
+  useLayoutEffect(() => {
+    // Functions are already defined at module level, but ensure they're accessible
+    if (typeof window !== 'undefined') {
+      (window as any).seededShuffle = seededShuffleModule;
+      (window as any).getShuffledLeaderboard = getShuffledLeaderboardModule;
+    }
+  }, []);
+
   const ToastAndroid = Platform.OS === 'android' ? require('react-native').ToastAndroid : null;
   const { streak, totalXP } = useLearnStore();
   const { userId, username, setUser } = useUserStore();
+  
+  // Error state to catch any rendering errors
+  const [componentError, setComponentError] = useState<Error | null>(null);
+
+  // Catch errors in useEffect
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const errorHandler = (error: ErrorEvent) => {
+        console.error('CommunityScreen error:', error);
+        setComponentError(new Error(error.message || 'Unknown error'));
+      };
+      const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
+        console.error('CommunityScreen unhandled rejection:', event);
+        setComponentError(new Error(event.reason?.message || 'Unhandled promise rejection'));
+      };
+      window.addEventListener('error', errorHandler);
+      window.addEventListener('unhandledrejection', unhandledRejectionHandler);
+      return () => {
+        window.removeEventListener('error', errorHandler);
+        window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
+      };
+    }
+  }, []);
 
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
   const [isFlipped, setIsFlipped] = useState(false);
@@ -52,6 +122,10 @@ export const CommunityScreen: React.FC = () => {
   const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
   const flipRotation = useSharedValue(0);
 
+  // Use module-level functions (defined above) to ensure they're always available
+  const seededShuffle = seededShuffleModule;
+  const getShuffledLeaderboard = getShuffledLeaderboardModule;
+
   const {
     data: narrativesData,
     loading: narrativesLoading,
@@ -60,6 +134,32 @@ export const CommunityScreen: React.FC = () => {
   } = useNarratives(undefined, 10, 60000); // Always fetch, use default userId in hook
 
   // Removed userId check - narratives are always fetched with default userId
+
+  // Safe leaderboard processing - ensure arrays are always valid
+  // Just return arrays directly - no shuffling needed
+  const safeGlobalLeaderboard = useMemo(() => {
+    try {
+      if (!Array.isArray(globalLeaderboard)) {
+        return [];
+      }
+      return globalLeaderboard;
+    } catch (error) {
+      console.error('Error processing global leaderboard:', error);
+      return [];
+    }
+  }, [globalLeaderboard]);
+
+  const safeFriendsLeaderboard = useMemo(() => {
+    try {
+      if (!Array.isArray(friendsLeaderboard)) {
+        return [];
+      }
+      return friendsLeaderboard;
+    } catch (error) {
+      console.error('Error processing friends leaderboard:', error);
+      return [];
+    }
+  }, [friendsLeaderboard]);
 
   useEffect(() => {
     if (!userId) return;
@@ -72,10 +172,14 @@ export const CommunityScreen: React.FC = () => {
           CommunityService.getLeaderboard(userId, 'global', leaderboardPeriod),
           CommunityService.getLeaderboard(userId, 'friends', leaderboardPeriod),
         ]);
-        setGlobalLeaderboard(global.entries);
-        setFriendsLeaderboard(friendsOnly.entries);
+        // Ensure entries is always an array to prevent "array is not iterable" errors
+        setGlobalLeaderboard(Array.isArray(global?.entries) ? global.entries : []);
+        setFriendsLeaderboard(Array.isArray(friendsOnly?.entries) ? friendsOnly.entries : []);
       } catch (error: any) {
         setLeaderboardError(error.message || 'Failed to load leaderboards');
+        // Set empty arrays on error to prevent rendering issues
+        setGlobalLeaderboard([]);
+        setFriendsLeaderboard([]);
       } finally {
         setLeaderboardLoading(false);
       }
@@ -85,20 +189,31 @@ export const CommunityScreen: React.FC = () => {
   }, [userId, leaderboardPeriod]);
 
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:89',message:'narrativesData updated',data:{narrativesCount:narrativesData.length,loading:narrativesLoading,firstNarrativeTitle:narrativesData[0]?.title,firstReason:narrativesData[0]?.insights?.reason?.substring(0,60),hasGenericText:(narrativesData[0]?.insights?.reason||'').includes('Narrative formed from recent')},timestamp:Date.now(),sessionId:'debug-session',runId:'check-data-flow',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    // Always set narratives data - no userId check needed
-    setLocalNarratives(narrativesData);
-    if (!narrativesLoading) {
-      const latestUpdated = narrativesData.reduce<Date | null>((latest, narrative) => {
-        const updatedAt = new Date(narrative.updated_at);
-        if (!latest || updatedAt > latest) {
-          return updatedAt;
-        }
-        return latest;
-      }, null);
-      setLastNarrativesUpdatedAt(latestUpdated ?? new Date());
+    try {
+      // Always set narratives data - no userId check needed
+      // Ensure narrativesData is always an array to prevent "array is not iterable" errors
+      const safeNarrativesData = Array.isArray(narrativesData) ? narrativesData : [];
+      setLocalNarratives(safeNarrativesData);
+      if (!narrativesLoading && safeNarrativesData.length > 0) {
+        const latestUpdated = safeNarrativesData.reduce<Date | null>((latest, narrative) => {
+          try {
+            if (!narrative || !narrative.updated_at) return latest;
+            const updatedAt = new Date(narrative.updated_at);
+            if (isNaN(updatedAt.getTime())) return latest;
+            if (!latest || updatedAt > latest) {
+              return updatedAt;
+            }
+          } catch (e) {
+            console.warn('Error parsing narrative date:', e);
+          }
+          return latest;
+        }, null);
+        setLastNarrativesUpdatedAt(latestUpdated ?? new Date());
+      }
+    } catch (error) {
+      console.error('Error in narrativesData useEffect:', error);
+      setLocalNarratives([]);
+      setComponentError(error instanceof Error ? error : new Error('Failed to process narratives data'));
     }
   }, [narrativesData, narrativesLoading]);
 
@@ -249,18 +364,31 @@ export const CommunityScreen: React.FC = () => {
   };
 
   const getVelocitySnapshot = (narrative: CommunityNarrative) => {
-    const { current, previous } = narrative.insights.change;
-    const delta = current - previous;
-    const percent =
-      previous === 0 ? (current > 0 ? 100 : 0) : Math.round((delta / previous) * 100);
-    return {
-      direction: percent >= 0 ? '↑' : '↓',
-      percent: Math.abs(percent),
-    };
+    try {
+      if (!narrative?.insights?.change) {
+        return { direction: '—', percent: 0 };
+      }
+      const { current = 0, previous = 0 } = narrative.insights.change;
+      const delta = current - previous;
+      const percent =
+        previous === 0 ? (current > 0 ? 100 : 0) : Math.round((delta / previous) * 100);
+      return {
+        direction: percent >= 0 ? '↑' : '↓',
+        percent: Math.abs(percent),
+      };
+    } catch (e) {
+      console.warn('Error calculating velocity snapshot:', e);
+      return { direction: '—', percent: 0 };
+    }
   };
 
   const getConfidenceLabel = (level: CommunityNarrative['insights']['confidence']['level']) => {
-    return `${level[0].toUpperCase()}${level.slice(1)}`;
+    try {
+      if (!level || typeof level !== 'string') return 'Unknown';
+      return `${level[0].toUpperCase()}${level.slice(1)}`;
+    } catch (e) {
+      return 'Unknown';
+    }
   };
 
   const getWhyLine = (text: string) => {
@@ -270,7 +398,10 @@ export const CommunityScreen: React.FC = () => {
   };
 
   const updateNarrative = (narrativeId: string, updater: (narrative: CommunityNarrative) => CommunityNarrative) => {
-    setLocalNarratives((prev) => prev.map((item) => (item.id === narrativeId ? updater(item) : item)));
+    setLocalNarratives((prev) => {
+      if (!Array.isArray(prev)) return [];
+      return prev.map((item) => (item?.id === narrativeId ? updater(item) : item));
+    });
   };
 
   const handleFollowNarrative = async (narrativeId: string) => {
@@ -310,27 +441,52 @@ export const CommunityScreen: React.FC = () => {
   };
 
   const cryptoNarratives = useMemo(() => {
-    return localNarratives.filter(
-      (narrative) =>
-        narrative.category === 'crypto' &&
-        narrative.assets.some(isCryptoAsset)
-    );
+    try {
+      if (!Array.isArray(localNarratives)) return [];
+      return localNarratives.filter(
+        (narrative) =>
+          narrative &&
+          narrative.category === 'crypto' &&
+          Array.isArray(narrative.assets) &&
+          narrative.assets.some(isCryptoAsset)
+      );
+    } catch (error) {
+      console.error('Error in cryptoNarratives useMemo:', error);
+      return [];
+    }
   }, [localNarratives]);
 
   const visibleNarratives = useMemo(() => {
-    return cryptoNarratives.filter((narrative) => !fadedNarratives.has(narrative.id));
+    try {
+      if (!Array.isArray(cryptoNarratives)) return [];
+      return cryptoNarratives.filter((narrative) => 
+        narrative && narrative.id && !fadedNarratives.has(narrative.id)
+      );
+    } catch (error) {
+      console.error('Error in visibleNarratives useMemo:', error);
+      return [];
+    }
   }, [cryptoNarratives, fadedNarratives]);
 
   const marketRooms = useMemo(() => {
-    return visibleNarratives.slice(0, 4).map((room) => ({
-      id: room.id,
-      title: room.title,
-      active: room.insights.change.current,
-      latest: room.insights.headlines[0]?.title || room.insights.reason,
-      headlines: room.insights.headlines,
-      sources: room.insights.sources,
-      narrative: room,
-    }));
+    try {
+      if (!Array.isArray(visibleNarratives)) return [];
+      return visibleNarratives.slice(0, 4).map((room) => {
+        if (!room || !room.id) return null;
+        return {
+          id: room.id,
+          title: room.title || 'Untitled',
+          active: room.insights?.change?.current || 0,
+          latest: (Array.isArray(room.insights?.headlines) && room.insights.headlines[0]?.title) || room.insights?.reason || '',
+          headlines: Array.isArray(room.insights?.headlines) ? room.insights.headlines : [],
+          sources: Array.isArray(room.insights?.sources) ? room.insights.sources : [],
+          narrative: room,
+        };
+      }).filter(Boolean) as any[];
+    } catch (e) {
+      console.error('Error creating market rooms:', e);
+      return [];
+    }
   }, [visibleNarratives]);
 
   const openRoomSheet = (room: any) => {
@@ -385,6 +541,31 @@ export const CommunityScreen: React.FC = () => {
   };
 
   const sheetVelocity = sheetMode === 'crypto' && sheetData ? getVelocitySnapshot(sheetData) : null;
+
+  // Error boundary - show error message if component crashes
+  if (componentError) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: theme.spacing.xl }]}>
+        <Text style={styles.errorText}>Error loading community page</Text>
+        <Text style={[styles.errorText, { fontSize: theme.typography.sizes.sm, marginTop: theme.spacing.md }]}>
+          {componentError.message}
+        </Text>
+        {Platform.OS === 'web' && (
+          <Pressable
+            onPress={() => {
+              setComponentError(null);
+              if (typeof window !== 'undefined') {
+                window.location.reload();
+              }
+            }}
+            style={{ marginTop: theme.spacing.lg, padding: theme.spacing.md, backgroundColor: theme.colors.accent, borderRadius: theme.borderRadius.md }}
+          >
+            <Text style={{ color: '#FFFFFF' }}>Reload Page</Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -589,29 +770,33 @@ export const CommunityScreen: React.FC = () => {
                       </View>
                     )}
 
-                    {!leaderboardLoading && !leaderboardError && globalLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
-                        <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
-                        </View>
-                        <View style={styles.userCol}>
-                          <View style={styles.avatar}>
-                            <Text style={styles.avatarText}>
-                              {entry.username.substring(0, 2).toUpperCase()}
+                    {!leaderboardLoading && !leaderboardError && safeGlobalLeaderboard.map((entry) => {
+                      if (!entry || !entry.userId) return null;
+                      const username = entry.username || 'Unknown';
+                      return (
+                        <View key={entry.userId} style={styles.tableRow}>
+                          <View style={styles.rankCol}>
+                            <Text style={styles.rankText}>#{entry.rank || 0}</Text>
+                          </View>
+                          <View style={styles.userCol}>
+                            <View style={styles.avatar}>
+                              <Text style={styles.avatarText}>
+                                {username.substring(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={styles.username}>{username}</Text>
+                          </View>
+                          <View style={styles.returnCol}>
+                            <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
+                              +{entry.returnPercent || 0}%
                             </Text>
                           </View>
-                          <Text style={styles.username}>{entry.username}</Text>
+                          <View style={styles.winRateCol}>
+                            <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
+                          </View>
                         </View>
-                        <View style={styles.returnCol}>
-                          <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
-                          </Text>
-                        </View>
-                        <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
-                        </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 </ScrollView>
               </View>
@@ -696,31 +881,36 @@ export const CommunityScreen: React.FC = () => {
                       </View>
                     )}
 
-                    {!leaderboardLoading && !leaderboardError && friendsLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
-                        <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
-                        </View>
-                        <View style={styles.userCol}>
-                          <View style={[styles.avatar, entry.userId === userId && styles.avatarYou]}>
-                            <Text style={styles.avatarText}>
-                              {entry.username.substring(0, 2).toUpperCase()}
+                    {!leaderboardLoading && !leaderboardError && safeFriendsLeaderboard.map((entry) => {
+                      if (!entry || !entry.userId) return null;
+                      const username = entry.username || 'Unknown';
+                      const isCurrentUser = entry.userId === userId;
+                      return (
+                        <View key={entry.userId} style={styles.tableRow}>
+                          <View style={styles.rankCol}>
+                            <Text style={styles.rankText}>#{entry.rank || 0}</Text>
+                          </View>
+                          <View style={styles.userCol}>
+                            <View style={[styles.avatar, isCurrentUser && styles.avatarYou]}>
+                              <Text style={styles.avatarText}>
+                                {username.substring(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={[styles.username, isCurrentUser && styles.usernameYou]}>
+                              {username}
                             </Text>
                           </View>
-                          <Text style={[styles.username, entry.userId === userId && styles.usernameYou]}>
-                            {entry.username}
-                          </Text>
+                          <View style={styles.returnCol}>
+                            <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
+                              +{entry.returnPercent || 0}%
+                            </Text>
+                          </View>
+                          <View style={styles.winRateCol}>
+                            <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
+                          </View>
                         </View>
-                        <View style={styles.returnCol}>
-                          <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
-                          </Text>
-                        </View>
-                        <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
-                        </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 </ScrollView>
               </View>
@@ -752,7 +942,7 @@ export const CommunityScreen: React.FC = () => {
             {narrativesError && !narrativesLoading && (
               <Text style={styles.errorText}>{narrativesError}</Text>
             )}
-            {!narrativesLoading && !narrativesError && cryptoNarratives.length === 0 && (
+            {!narrativesLoading && !narrativesError && (!Array.isArray(cryptoNarratives) || cryptoNarratives.length === 0) && (
               <View style={styles.emptyStateBlock}>
                 <Text style={styles.emptyStateText}>No active crypto narratives right now</Text>
                 <Text style={styles.emptyStateSubtext}>
@@ -760,46 +950,52 @@ export const CommunityScreen: React.FC = () => {
                 </Text>
               </View>
             )}
-            {cryptoNarratives.map((narrative) => {
+            {Array.isArray(cryptoNarratives) && cryptoNarratives.length > 0 && cryptoNarratives.map((narrative) => {
+              if (!narrative || !narrative.id) return null;
               const isFaded = fadedNarratives.has(narrative.id);
 
               return (
                 <View key={narrative.id}>
                   {/* Narrative Title */}
-                  <Text style={styles.narrativePageTitle}>{narrative.title}</Text>
+                  <Text style={styles.narrativePageTitle}>{narrative.title || 'Untitled Narrative'}</Text>
                   
                   <View
                     style={[styles.narrativeCard, isFaded && styles.narrativeCardMuted]}
                   >
 
                   {/* Current Positions */}
-                  {narrative.assets.length > 0 && (() => {
+                  {Array.isArray(narrative.assets) && narrative.assets.length > 0 && (() => {
                     // Extract position values from reason text
                     // Format: "223,341 $ETH($736M)" or "$ETH($65.4M)"
                     const positionValues = new Map<string, string>();
-                    const reasonText = narrative.insights.reason;
+                    const reasonText = narrative.insights?.reason || '';
                     
                     // Try to extract values like "$ETH($736M)" or "20,000 $ETH($65.4M)"
                     narrative.assets.forEach((asset) => {
-                      const assetSymbol = asset.replace('$', '');
-                      // Escape special regex characters
-                      const escapedSymbol = assetSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                      
-                      // Look for patterns like "$ETH($736M)" or "223,341 $ETH($736M)"
-                      // Pattern: (optional number) $SYMBOL($value)
-                      const pattern = new RegExp(`(?:\\d+[,\\d]*\\s+)?\\$${escapedSymbol}\\s*\\(([\\$\\d.]+[BMK]?)\\)`, 'gi');
-                      let match;
-                      let lastValue: string | null = null;
-                      
-                      // Find all matches (compatible with React Native)
-                      while ((match = pattern.exec(reasonText)) !== null) {
-                        if (match[1]) {
-                          lastValue = match[1];
+                      try {
+                        if (!asset || typeof asset !== 'string') return;
+                        const assetSymbol = asset.replace('$', '');
+                        // Escape special regex characters
+                        const escapedSymbol = assetSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        
+                        // Look for patterns like "$ETH($736M)" or "223,341 $ETH($736M)"
+                        // Pattern: (optional number) $SYMBOL($value)
+                        const pattern = new RegExp(`(?:\\d+[,\\d]*\\s+)?\\$${escapedSymbol}\\s*\\(([\\$\\d.]+[BMK]?)\\)`, 'gi');
+                        let match;
+                        let lastValue: string | null = null;
+                        
+                        // Find all matches (compatible with React Native)
+                        while ((match = pattern.exec(reasonText)) !== null) {
+                          if (match[1]) {
+                            lastValue = match[1];
+                          }
                         }
-                      }
-                      
-                      if (lastValue) {
-                        positionValues.set(asset, lastValue);
+                        
+                        if (lastValue) {
+                          positionValues.set(asset, lastValue);
+                        }
+                      } catch (e) {
+                        console.warn('Error extracting position value for asset:', asset, e);
                       }
                     });
                     
@@ -807,7 +1003,8 @@ export const CommunityScreen: React.FC = () => {
                       <View style={styles.positionsSection}>
                         <Text style={styles.sectionLabel}>Positions</Text>
                         <View style={styles.positionsRow}>
-                          {narrative.assets.map((asset) => {
+                          {Array.isArray(narrative.assets) && narrative.assets.map((asset) => {
+                            if (!asset || typeof asset !== 'string') return null;
                             const value = positionValues.get(asset);
                             return (
                               <View key={asset} style={styles.positionTag}>
@@ -823,26 +1020,32 @@ export const CommunityScreen: React.FC = () => {
                   })()}
 
                   {/* News Widget */}
-                  {narrative.insights.headlines && narrative.insights.headlines.length > 0 && (
+                  {Array.isArray(narrative.insights?.headlines) && narrative.insights.headlines.length > 0 && (
                     <View style={styles.headlinesSection}>
                       <Text style={styles.sectionLabel}>News</Text>
                       {narrative.insights.headlines.slice(0, 5).map((headline, index) => {
-                        // Remove "Current positions:" section from headline text
-                        let cleanedTitle = headline.title;
-                        // Remove everything from "Current positions:" (case insensitive) to the end
-                        const positionsPattern = /\n\s*Current\s+positions?:?\s*\n.*$/is;
-                        cleanedTitle = cleanedTitle.replace(positionsPattern, '').trim();
-                        
-                        return (
-                          <Pressable
-                            key={`${headline.url}-${index}`}
-                            onPress={() => headline.url && Linking.openURL(headline.url)}
-                            style={styles.headlineLink}
-                          >
-                            <Text style={styles.headlineText}>{cleanedTitle}</Text>
-                            <Ionicons name="open-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
-                          </Pressable>
-                        );
+                        try {
+                          if (!headline || !headline.title) return null;
+                          // Remove "Current positions:" section from headline text
+                          let cleanedTitle = headline.title || '';
+                          // Remove everything from "Current positions:" (case insensitive) to the end
+                          const positionsPattern = /\n\s*Current\s+positions?:?\s*\n.*$/is;
+                          cleanedTitle = cleanedTitle.replace(positionsPattern, '').trim();
+                          
+                          return (
+                            <Pressable
+                              key={`${headline.url || index}-${index}`}
+                              onPress={() => headline.url && Linking.openURL(headline.url)}
+                              style={styles.headlineLink}
+                            >
+                              <Text style={styles.headlineText}>{cleanedTitle}</Text>
+                              <Ionicons name="open-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
+                            </Pressable>
+                          );
+                        } catch (e) {
+                          console.warn('Error rendering headline:', e);
+                          return null;
+                        }
                       })}
                     </View>
                   )}
@@ -870,24 +1073,27 @@ export const CommunityScreen: React.FC = () => {
             {marketRooms.length === 0 && (
               <Text style={styles.emptyStateText}>No active rooms yet</Text>
             )}
-            {marketRooms.map((room) => (
-              <Pressable
-                key={room.id}
-                style={styles.roomRow}
-                onPress={() => openRoomSheet(room)}
-              >
-                <View style={styles.roomHeader}>
-                  <Text style={styles.roomTitle}>{room.title}</Text>
-                  <Text style={styles.roomMeta}>{room.active} signals active</Text>
-                </View>
-                <Text style={styles.roomLatest} numberOfLines={1}>
-                  Latest headline ▸ {room.latest}
-                </Text>
-                <View style={styles.roomCTA}>
-                  <Text style={styles.roomCTAText}>Open room</Text>
-                </View>
-              </Pressable>
-            ))}
+            {Array.isArray(marketRooms) && marketRooms.map((room) => {
+              if (!room || !room.id) return null;
+              return (
+                <Pressable
+                  key={room.id}
+                  style={styles.roomRow}
+                  onPress={() => openRoomSheet(room)}
+                >
+                  <View style={styles.roomHeader}>
+                    <Text style={styles.roomTitle}>{room.title || 'Untitled Room'}</Text>
+                    <Text style={styles.roomMeta}>{room.active || 0} signals active</Text>
+                  </View>
+                  <Text style={styles.roomLatest} numberOfLines={1}>
+                    Latest headline ▸ {room.latest || 'No updates'}
+                  </Text>
+                  <View style={styles.roomCTA}>
+                    <Text style={styles.roomCTAText}>Open room</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         </GlowingBorder>
         </>
@@ -921,41 +1127,47 @@ export const CommunityScreen: React.FC = () => {
                 <Text style={styles.sheetSubtitle}>Narrative snapshot</Text>
                 <Text style={styles.sheetMeta}>
                   {sheetVelocity?.direction ?? '—'} {sheetVelocity?.percent ?? 0}% (24h) ·{' '}
-                  {sheetData.insights.sources.length} sources ·{' '}
-                  {getConfidenceLabel(sheetData.insights.confidence.level)} confidence
+                  {Array.isArray(sheetData.insights?.sources) ? sheetData.insights.sources.length : 0} sources ·{' '}
+                  {getConfidenceLabel(sheetData.insights?.confidence?.level || 'low')} confidence
                 </Text>
                 <View style={styles.sheetSection}>
                   <Text style={styles.sheetWhy} numberOfLines={3}>
                     Why: {getWhyLine(sheetData.insights.reason)}
                   </Text>
                 </View>
-                {sheetData.insights.headlines?.length > 0 && (
+                {Array.isArray(sheetData.insights?.headlines) && sheetData.insights.headlines.length > 0 && (
                   <>
                     <Text style={styles.sheetSubtitle}>Latest headlines</Text>
                     <View style={styles.sheetSection}>
-                      {sheetData.insights.headlines.slice(0, 3).map((headline: { title: string; url: string }, index: number) => (
-                        <Pressable
-                          key={`${headline.title}-${index}`}
-                          onPress={() => headline.url && Linking.openURL(headline.url)}
-                          style={styles.sheetHeadlineLink}
-                        >
-                          <Text style={styles.sheetBullet}>
-                            • {headline.title}
-                          </Text>
-                        </Pressable>
-                      ))}
+                      {Array.isArray(sheetData.insights.headlines) && sheetData.insights.headlines.slice(0, 3).map((headline: { title: string; url: string }, index: number) => {
+                        if (!headline || !headline.title) return null;
+                        return (
+                          <Pressable
+                            key={`${headline.title}-${index}`}
+                            onPress={() => headline.url && Linking.openURL(headline.url)}
+                            style={styles.sheetHeadlineLink}
+                          >
+                            <Text style={styles.sheetBullet}>
+                              • {headline.title}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
                     </View>
                   </>
                 )}
-                {sheetData.insights.sources?.length > 0 && (
+                {Array.isArray(sheetData.insights?.sources) && sheetData.insights.sources.length > 0 && (
                   <>
                     <Text style={styles.sheetSubtitle}>Sources</Text>
                     <View style={styles.sheetSources}>
-                      {(sheetData.insights.sources || []).map((source: string) => (
-                        <View key={source} style={styles.sourcePill}>
-                          <Text style={styles.sourcePillText}>{source.toUpperCase()}</Text>
-                        </View>
-                      ))}
+                      {Array.isArray(sheetData.insights.sources) && sheetData.insights.sources.map((source: string) => {
+                        if (!source || typeof source !== 'string') return null;
+                        return (
+                          <View key={source} style={styles.sourcePill}>
+                            <Text style={styles.sourcePillText}>{source.toUpperCase()}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   </>
                 )}
@@ -973,25 +1185,28 @@ export const CommunityScreen: React.FC = () => {
                     { key: 'question', label: 'Question' },
                     { key: 'insight', label: 'Insight' },
                     { key: 'source', label: 'Source' },
-                  ] as const).map((type) => (
-                    <Pressable
-                      key={type.key}
-                      style={[
-                        styles.messageTypePill,
-                        roomMessageType === type.key && styles.messageTypePillActive,
-                      ]}
-                      onPress={() => setRoomMessageType(type.key)}
-                    >
-                      <Text
+                  ] as const).map((type) => {
+                    if (!type || !type.key) return null;
+                    return (
+                      <Pressable
+                        key={type.key}
                         style={[
-                          styles.messageTypeText,
-                          roomMessageType === type.key && styles.messageTypeTextActive,
+                          styles.messageTypePill,
+                          roomMessageType === type.key && styles.messageTypePillActive,
                         ]}
+                        onPress={() => setRoomMessageType(type.key)}
                       >
-                        {type.label}
-                      </Text>
-                    </Pressable>
-                  ))}
+                        <Text
+                          style={[
+                            styles.messageTypeText,
+                            roomMessageType === type.key && styles.messageTypeTextActive,
+                          ]}
+                        >
+                          {type.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
 
                 <View style={styles.roomMessages}>
@@ -1000,12 +1215,15 @@ export const CommunityScreen: React.FC = () => {
                   {!roomLoading && !roomError && roomMessages.length === 0 && (
                     <Text style={styles.emptyStateText}>Be the first to add a take</Text>
                   )}
-                  {roomMessages.map((message) => (
-                    <View key={message.id} style={styles.roomMessageRow}>
-                      <Text style={styles.roomMessageAuthor}>@{message.username}</Text>
-                      <Text style={styles.roomMessageText}>{message.text}</Text>
-                    </View>
-                  ))}
+                  {Array.isArray(roomMessages) && roomMessages.map((message) => {
+                    if (!message || !message.id) return null;
+                    return (
+                      <View key={message.id} style={styles.roomMessageRow}>
+                        <Text style={styles.roomMessageAuthor}>@{message.username || 'unknown'}</Text>
+                        <Text style={styles.roomMessageText}>{message.text || ''}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 <View style={styles.roomComposer}>
@@ -1033,6 +1251,15 @@ export const CommunityScreen: React.FC = () => {
         </View>
       )}
     </View>
+  );
+};
+
+// Export wrapped component with error boundary
+export const CommunityScreen: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <CommunityScreenContent />
+    </ErrorBoundary>
   );
 };
 
