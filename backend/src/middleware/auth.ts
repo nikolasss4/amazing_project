@@ -29,6 +29,10 @@ export const authMiddleware = (
   // In production: Extract from JWT token
   const userId = req.headers['x-user-id'] as string;
   
+  // #region agent log
+  console.log('Auth middleware - x-user-id header:', userId, 'all headers:', Object.keys(req.headers).filter(k => k.toLowerCase().includes('user')));
+  // #endregion
+  
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized: userId required' });
   }
