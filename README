@@ -1,33 +1,456 @@
-📱 Project Description
-This project is a mobile-first simplified trading application designed to make modern trading accessible, educational, and community-driven for everyday users.
-The platform focuses on ease of use without sacrificing powerful features, offering multiple trading styles, social insights, and interactive learning — all wrapped in a clean, intuitive mobile experience.
+# RiskLaba
 
-🔁 Trading Features
+**Learn How Markets Really Work**
+
+Trading literacy through real events, real data, real outcomes.
+
+---
+
+## 📱 Project Description
+
+RiskLaba is a mobile-first simplified trading application designed to make modern trading accessible, educational, and community-driven for everyday users. The platform focuses on ease of use without sacrificing powerful features, offering multiple trading styles, social insights, and interactive learning — all wrapped in a clean, intuitive mobile experience.
+
+### The Problem We Solve
+
+Traditional trading education is theoretical and disconnected from reality. New traders lose money because they lack intuition about how markets actually behave. Paper trading doesn't work - it's not real enough to build genuine market intuition. People need to experience real market events with real data, but without real risk.
+
+### Our Solution
+
+RiskLaba is a mobile-first platform that replays real financial events. Users make decisions using real historical market data, see real outcomes based on their choices, and build genuine trading intuition before risking real money. The platform combines simplified trading, gamified learning, and community insights.
+
+> **"Experience what happened in markets yesterday, so you can make better decisions tomorrow."**
+
+---
+
+## ✨ Key Features
+
+### 🔁 Trading Features
+
 The app supports several simplified trading modes:
-Normal trades for straightforward buying and selling
-Pair trades for relative value strategies
-Bucket trades that allow users to trade grouped assets together
+
+- **Normal trades** - Straightforward buying and selling of individual assets
+- **Pair trades** - Trade relative value strategies (e.g., Long ETH / Short BTC)
+- **Bucket/Basket trades** - Trade grouped assets together (e.g., AI ecosystem, L2s, DeFi)
+- **Market & Limit orders** - Instant execution or set your price
+- **Conditional execution** - Execute trades based on market conditions (e.g., "Execute only if BTC > $70k")
+
 The trading experience is intentionally streamlined, removing unnecessary complexity so non-professional users can trade confidently and efficiently.
 
-🎮 Learn Section (Gamified Education)
-The Learn section introduces trading concepts through gamified experiences, helping users build intuition without risk.
-Users can:
-Learn market fundamentals through interactive scenarios
-Predict whether a stock or trend will move up or down based on given conditions
-Play, guess, and learn through game-like mechanics rather than traditional tutorials
+**Powered by Pear Protocol**: Every trade in RiskLaba executes real orders on Hyperliquid through Pear Protocol's Execution API.
+
+### 🎮 Learn Section (Gamified Education)
+
+The Learn section introduces trading concepts through gamified experiences, helping users build intuition without risk:
+
+- **Replay real events** - Experience actual market moments (e.g., "Fed raises rates 0.5%")
+- **Make predictions** - Predict whether a stock or trend will move up or down based on given conditions
+- **See real outcomes** - Learn what actually happened with historical data
+- **Build intuition** - Understand cause-and-effect relationships in markets
+- **XP & streaks** - Gamification keeps you engaged and learning
+- **No risk** - Learn from mistakes without losing real money
+
 This approach makes financial education engaging, practical, and beginner-friendly.
 
-👥 Community Section
-The Community section adds a social layer to the platform, including:
-User leaderboards and ranking tables
-Ratings and performance-based comparisons
-Scraped and curated celebrity and public portfolios for inspiration and analysis
-Social insights sourced from platforms like Twitter, including sentiment and trending discussions related to stocks and markets
+### 👥 Community Section
+
+The Community section adds a social layer to the platform:
+
+- **User leaderboards** - Rankings and performance-based comparisons
+- **Friend system** - Add friends via QR codes, compete with your network
+- **Celebrity portfolios** - Scraped and curated celebrity and public portfolios for inspiration and analysis
+- **Market narratives** - Track trending themes (AI, L2s, DeFi)
+- **Market rooms** - Discuss strategies and share insights
+- **Social sentiment** - Insights sourced from platforms like Twitter, including sentiment and trending discussions related to stocks and markets
+
 This section is designed to encourage learning through observation, competition, and shared knowledge.
 
-🧩 Widgets & Integrations
+### 🧩 Widgets & Integrations
+
 The app includes custom widgets that allow users to quickly track:
-Market movements
-Personal performance
-Trends and social sentiment
+
+- Market movements
+- Personal performance
+- Trends and social sentiment
+
 These widgets enhance usability and keep users informed at a glance.
+
+### 🤖 AI Assistant
+
+- **Contextual help** - Screenshot-based assistance that understands your current screen
+- **Voice support** - Text-to-speech capabilities for hands-free interaction
+- **Trading insights** - Get AI-powered analysis and recommendations
+
+---
+
+## 🛠️ Tech Stack
+
+### Mobile App
+- **React Native** with Expo (~50.0.0)
+- **TypeScript** for type safety
+- **React Navigation** for routing
+- **Zustand** for state management
+- **Expo Camera** for QR code scanning
+- **TradingView** charts via WebView
+
+### Backend
+- **Node.js** with Express
+- **TypeScript** for type safety
+- **Prisma** ORM with SQLite/PostgreSQL
+- **Bull** for job queues with Redis
+- **OpenAI API** for AI features
+- **Pear Protocol API** for trading execution on Hyperliquid
+
+### Infrastructure
+- **PostgreSQL** or **SQLite** for database
+- **Redis** for job queues and caching
+- **Supabase** (optional) for auth and database
+
+---
+
+## 📋 Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+### Required
+- **Node.js** 18+ ([Download](https://nodejs.org/))
+- **npm** or **yarn**
+- **Python 3.11+** (for backend Python services, if used)
+- **Git**
+
+### For Mobile Development
+- **Xcode 15+** (for iOS development on macOS)
+- **iOS Simulator** (comes with Xcode)
+- **Android Studio** (for Android development, optional)
+
+### For Backend
+- **PostgreSQL** (or use SQLite for development)
+- **Redis** (for job queues)
+
+---
+
+## 🚀 Installation & Setup
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd amazing_project
+```
+
+### 2. Backend Setup
+
+#### Install Dependencies
+
+```bash
+cd backend
+npm install
+```
+
+#### Configure Environment Variables
+
+Create a `.env` file in the `backend/` directory:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and configure the following **required** variables:
+
+```env
+# Database
+DATABASE_URL="file:./dev.db"  # SQLite for development
+# Or PostgreSQL: DATABASE_URL="postgresql://user:password@host:port/database?schema=public"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# JWT
+JWT_SECRET="your-secret-key-here"
+
+# API Keys (Required)
+NEWSAPI_KEY="your-newsapi-key"           # Get from https://newsapi.org/register
+OPENAI_API_KEY="sk-proj-..."            # Get from https://platform.openai.com/api-keys
+
+# Optional API Keys
+CRYPTOPANIC_TOKEN="your-token"          # Optional: Crypto news
+ELEVENLABS_API_KEY="your-key"          # Optional: Text-to-speech
+X_PROVIDER_KEY="your-key"             # Optional: X/Twitter integration
+PEAR_API_KEY="your-key"                # Optional: Pear Protocol trading
+```
+
+**Get API Keys:**
+- **NewsAPI**: [Register here](https://newsapi.org/register) (Free tier: 100 requests/day)
+- **OpenAI**: [Get API key](https://platform.openai.com/api-keys)
+- See `API_KEYS_SETUP_COMPLETE.md` for complete API key setup guide
+
+#### Database Setup
+
+```bash
+# Generate Prisma client
+npm run db:generate
+
+# Run migrations (if using migrations)
+npm run db:migrate
+
+# Or open Prisma Studio to manage database
+npm run db:studio
+```
+
+#### Start Backend Server
+
+```bash
+# Development mode (with hot reload)
+npm run dev
+
+# Production mode
+npm run build
+npm start
+```
+
+The backend will run on `http://localhost:3000` (or port specified in config).
+
+**API Documentation:**
+- Swagger UI: `http://localhost:3000/docs` (if available)
+- Health check: `http://localhost:3000/health`
+
+### 3. Mobile App Setup
+
+#### Install Dependencies
+
+```bash
+cd mobile
+npm install
+```
+
+#### Configure Backend URL
+
+Update the API base URL in the mobile app configuration to point to your backend server.
+
+#### Start Metro Bundler
+
+```bash
+npm start
+```
+
+#### Run on iOS Simulator
+
+```bash
+# In a new terminal, or press 'i' in the Metro bundler terminal
+npm run ios
+```
+
+#### Run on Android Emulator
+
+```bash
+npm run android
+```
+
+**First build takes 3-5 minutes. Subsequent builds are faster.**
+
+---
+
+## 🏃 Running the Application
+
+### Start Backend
+
+```bash
+cd backend
+npm run dev
+```
+
+### Start Mobile App
+
+```bash
+cd mobile
+npm start
+# Then press 'i' for iOS or 'a' for Android
+```
+
+### Start Background Workers (Optional)
+
+```bash
+# In separate terminals
+cd backend
+npm run worker:ingestion    # News ingestion worker
+npm run worker:leaderboard  # Leaderboard updates
+npm run worker:pulse        # Pulse updates
+```
+
+---
+
+## 📁 Project Structure
+
+```
+amazing_project/
+├── backend/                 # Backend API server
+│   ├── src/
+│   │   ├── app.ts          # Express app entry point
+│   │   ├── routes/         # API route handlers
+│   │   ├── services/       # Business logic
+│   │   ├── repositories/   # Data access layer
+│   │   ├── providers/      # External API providers
+│   │   ├── workers/        # Background job workers
+│   │   └── config/         # Configuration files
+│   ├── prisma/             # Prisma schema and migrations
+│   ├── sql/                # SQL migrations
+│   └── package.json
+│
+├── mobile/                  # React Native mobile app
+│   ├── src/
+│   │   ├── app/            # Navigation, theme, stores
+│   │   ├── features/       # Feature modules (Trade, Community, Learn)
+│   │   └── ui/             # Shared UI components
+│   ├── App.tsx             # App entry point
+│   └── package.json
+│
+└── README.md               # This file
+```
+
+---
+
+## 🔌 API Endpoints
+
+### Trading
+- `POST /api/trade/pear/positions` - Execute pair/basket trades via Pear Protocol
+- `POST /api/trade/pear/orders/spot` - Execute single token trades
+- `GET /api/trade/instruments` - Get available trading instruments
+
+### Community
+- `GET /api/community/leaderboard` - Get user leaderboard
+- `POST /api/community/friends` - Add friend via QR code
+- `GET /api/community/narratives` - Get market narratives
+- `GET /api/community/market-rooms` - Get market room discussions
+
+### Learning
+- `GET /api/learn/scenarios` - Get learning scenarios
+- `POST /api/learn/answers` - Submit scenario answers
+- `GET /api/learn/progress` - Get user progress
+
+### News & Sentiment
+- `POST /api/v1/news/ingest` - Ingest news articles
+- `GET /api/v1/news` - Get news articles
+- `GET /api/v1/sentiment` - Get sentiment analysis
+
+See backend API documentation at `http://localhost:3000/docs` for complete API reference.
+
+---
+
+## 🧪 Testing
+
+### Backend Tests
+
+```bash
+cd backend
+npm test
+npm run test:coverage
+```
+
+### Mobile Tests
+
+```bash
+cd mobile
+npm test
+```
+
+---
+
+## 📚 Documentation
+
+Additional documentation is available in the project:
+
+- **`mobile/QUICKSTART.md`** - Quick start guide for mobile development
+- **`mobile/README.md`** - Mobile app documentation
+- **`backend/README.md`** - Backend API documentation
+- **`API_KEYS_SETUP_COMPLETE.md`** - Complete API keys setup guide
+- **`API_KEYS_QUICK_REFERENCE.md`** - Quick reference for API keys
+- **`PRESENTATION_SLIDES.md`** - Project presentation slides
+
+---
+
+## 🔧 Troubleshooting
+
+### Backend Issues
+
+**"NEWSAPI_KEY is missing"**
+- Add `NEWSAPI_KEY=your_key` to `backend/.env`
+- Restart the backend server
+
+**"Database connection error"**
+- Check `DATABASE_URL` format
+- Ensure PostgreSQL is running (or use SQLite: `DATABASE_URL="file:./dev.db"`)
+
+**"Redis connection error"**
+- Ensure Redis is running: `redis-cli ping`
+- Check `REDIS_URL` matches your Redis setup
+
+### Mobile Issues
+
+**"Command not found: expo"**
+```bash
+npm install -g expo-cli
+```
+
+**"Unable to boot simulator"**
+1. Open Xcode
+2. Go to Window → Devices and Simulators
+3. Click "+" to add iPhone 15 simulator
+4. Try again
+
+**"Metro bundler not running"**
+```bash
+killall -9 node
+npm start
+```
+
+**"Pods installation failed" (iOS)**
+```bash
+cd mobile/ios
+pod install
+cd ..
+npm run ios
+```
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## 👥 Team & Contact
+
+For questions, issues, or contributions, please open an issue on the repository.
+
+---
+
+## 🎯 Submission Summary
+
+**What We Built:**
+RiskLaba is a mobile-first trading literacy platform that helps users learn how markets really work by replaying real financial events. Users make decisions using real market data, see real outcomes, and build intuition - all before risking real money.
+
+**How It Uses Pear Protocol:**
+Every trade in RiskLaba executes real orders on Hyperliquid through Pear Protocol. We support pair trades (Long ETH / Short BTC), basket trades (AI tokens, L2s, DeFi), conditional execution (execute when BTC > $70k), and limit orders. All trades use Pear's Execution API with EIP-712 wallet authentication.
+
+**Why Someone Would Use It:**
+New traders can learn safely with real data without risking money. Experienced traders can practice strategies and execute real trades. The gamified, social experience makes learning engaging and drives trading volume through competition and easy execution.
+
+**Real Trades:**
+✅ Yes - All trades execute via Pear Execution API on Hyperliquid
+
+**Unlocks New Behavior:**
+✅ Yes - Makes pair/basket trading accessible to non-professional traders through simple UI
+
+---
+
+**Built with ❤️ for the Hyperliquid Hackathon**
