@@ -21,6 +21,7 @@ import { theme } from '@app/theme';
 import { useImproveStore } from '@app/store';
 import { mockScenarios, Answer } from '../models';
 import { LiquidFireBackground, LiquidFireBackgroundRef } from '../components/LiquidFireBackground';
+import { Avatar } from '../../community/components/Avatar';
 import { CandlestickChart } from '../components/CandlestickChart';
 import { ScenarioCardSkeleton } from '../components/ScenarioCardSkeleton';
 import { EmptyState } from '../components/EmptyState';
@@ -299,6 +300,14 @@ export const ImproveScreen: React.FC = () => {
         <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
+          <View style={styles.headerTitleContainer}>
+            <Avatar
+              userId="3"
+              username="TechBull"
+              size={48}
+              isYou={true}
+            />
+          </View>
           <View style={styles.headerRight}>
             {/* Streak indicator with pulse animation */}
             <Animated.View style={[styles.streakChipContainer, streakAnimatedStyle]}>
@@ -685,9 +694,15 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingLeft: theme.spacing.md,
   },
   title: {
     fontSize: theme.typography.sizes.xxl,
