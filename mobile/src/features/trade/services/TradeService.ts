@@ -159,6 +159,27 @@ export interface GetOpenPositionsResponse {
 }
 
 /**
+ * Request format for closing a position
+ */
+export interface ClosePositionRequest {
+  executionType?: 'MARKET' | 'TWAP';
+  twapDuration?: number;
+  twapIntervalSeconds?: number;
+  randomizeExecution?: boolean;
+  referralCode?: string;
+}
+
+/**
+ * Response from close position endpoint
+ */
+export interface ClosePositionResponse {
+  success: boolean;
+  message?: string;
+  positionId?: string;
+  error?: string;
+}
+
+/**
  * Multi-pair order leg format
  */
 export interface MultiPairLeg {
@@ -664,6 +685,90 @@ class TradeServiceClass {
         positions: [],
         count: 0,
         error: error instanceof Error ? error.message : 'Failed to fetch positions',
+      };
+    }
+  }
+
+  /**
+   * Close an open position on Pear Protocol
+   * Calls backend which proxies to Pear Protocol API
+   * 
+   * @param positionId - The ID of the position to close
+   * @param options - Optional close parameters (execution type, TWAP settings, etc.)
+   * @param accessToken - Optional access token (uses stored token if not provided)
+   */
+  async closePosition(
+    positionId: string,
+    options: ClosePositionRequest = {},
+    accessToken?: string
+  ): Promise<ClosePositionResponse> {
+    console.log('\n' + '='.repeat(80));
+    console.log('CLOSING POSITION');
+    console.log('='.repeat(80));
+    console.log('Platform:', Platform.OS);
+    console.log('API Base URL:', this.apiBaseUrl);
+    console.log('Position ID:', positionId);
+    console.log('Options:', JSON.stringify(options, null, 2));
+    console.log('Access Token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+
+    try {
+      // Get access token from store if not provided
+      const token = accessToken || await this.getAccessToken();
+      
+      const url = `${this.apiBaseUrl}/positions/${positionId}/close${token ? `?authorization=${encodeURIComponent(token)}` : ''}`;
+      console.log('Request URL:', url);
+      console.log('Making POST request...');
+
+      // Build request body with defaults matching Pear API expectations
+      const requestBody: ClosePositionRequest = {
+        executionType: options.executionType || 'MARKET',
+        twapDuration: options.twapDuration ?? 60,
+        twapIntervalSeconds: options.twapIntervalSeconds ?? 30,
+        randomizeExecution: options.randomizeExecution ?? true,
+        referralCode: options.referralCode,
+      };
+
+      console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log('Response Status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error Response:', errorText);
+        console.log('='.repeat(80) + '\n');
+        return {
+          success: false,
+          positionId,
+          error: `Failed to close position: ${response.status} ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+      console.log('Response Data:', JSON.stringify(data, null, 2));
+      console.log('='.repeat(80) + '\n');
+
+      return {
+        success: data.success ?? true,
+        message: data.message,
+        positionId: data.positionId || positionId,
+        error: data.error,
+      };
+    } catch (error) {
+      console.error('Failed to close position:', error);
+      console.log('='.repeat(80) + '\n');
+      return {
+        success: false,
+        positionId,
+        error: error instanceof Error ? error.message : 'Failed to close position',
       };
     }
   }

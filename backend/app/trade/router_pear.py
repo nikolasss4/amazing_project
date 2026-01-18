@@ -771,6 +771,154 @@ async def close_pair_trade(
     return {"success": True}
 
 
+class ClosePositionRequest(BaseModel):
+    """Request body for closing a position."""
+    executionType: str = "MARKET"
+    twapDuration: int | None = 60
+    twapIntervalSeconds: int | None = 30
+    randomizeExecution: bool | None = True
+    referralCode: str | None = None
+
+
+@router.post("/positions/{position_id}/close")
+async def close_position(
+    position_id: str,
+    request: ClosePositionRequest = ClosePositionRequest(),
+    authorization: str = Query(default=None, description="Bearer token for Pear API"),
+    service: PearServiceDep = None,
+) -> dict[str, Any]:
+    """
+    Close an open position on Pear Protocol.
+    
+    This endpoint forwards the close request to Pear Protocol API
+    at https://hl-v2.pearprotocol.io/positions/{positionId}/close
+    
+    Args:
+        position_id: The ID of the position to close
+        request: Close position parameters (execution type, TWAP settings, etc.)
+        authorization: Bearer token from Pear Protocol authentication
+        
+    Returns:
+        Success status and close result
+    """
+    import httpx
+    import json
+    from datetime import datetime
+    
+    logger.info("=" * 80)
+    logger.info("CLOSE POSITION REQUEST")
+    logger.info("=" * 80)
+    logger.info(f"Position ID: {position_id}")
+    logger.info(f"Execution Type: {request.executionType}")
+    logger.info(f"TWAP Duration: {request.twapDuration}")
+    logger.info(f"TWAP Interval: {request.twapIntervalSeconds}")
+    logger.info(f"Randomize: {request.randomizeExecution}")
+    logger.info(f"Authorization provided: {'Yes' if authorization else 'No'}")
+    logger.info("=" * 80)
+    
+    try:
+        # Build request body for Pear API
+        pear_request_body = {
+            "executionType": request.executionType,
+        }
+        
+        # Add optional TWAP parameters
+        if request.twapDuration is not None:
+            pear_request_body["twapDuration"] = request.twapDuration
+        if request.twapIntervalSeconds is not None:
+            pear_request_body["twapIntervalSeconds"] = request.twapIntervalSeconds
+        if request.randomizeExecution is not None:
+            pear_request_body["randomizeExecution"] = request.randomizeExecution
+        if request.referralCode:
+            pear_request_body["referralCode"] = request.referralCode
+        
+        # Serialize request body
+        request_body_json = json.dumps(pear_request_body)
+        content_length = len(request_body_json.encode('utf-8'))
+        
+        logger.info(f"Pear API Request Body: {json.dumps(pear_request_body, indent=2)}")
+        logger.info(f"Content-Length: {content_length} bytes")
+        
+        # Call Pear Protocol API
+        pear_api_url = f"https://hl-v2.pearprotocol.io/positions/{position_id}/close"
+        
+        headers = {
+            "Host": "hl-v2.pearprotocol.io",
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+            "Content-Length": str(content_length),
+        }
+        
+        # Add Authorization header (required)
+        if authorization:
+            if authorization.startswith("Bearer "):
+                headers["Authorization"] = authorization
+            else:
+                headers["Authorization"] = f"Bearer {authorization}"
+        else:
+            logger.warning("No authorization token provided - request may fail")
+        
+        logger.info(f"Calling Pear API: POST {pear_api_url}")
+        logger.info(f"Request Headers: {json.dumps({k: v[:50] + '...' if k == 'Authorization' and len(v) > 50 else v for k, v in headers.items()}, indent=2)}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                pear_api_url,
+                content=request_body_json,
+                headers=headers
+            )
+            
+            logger.info(f"Pear API Response Status: {response.status_code}")
+            logger.info(f"Pear API Response Headers: {dict(response.headers)}")
+            
+            # Try to parse response as JSON
+            try:
+                response_data = response.json()
+                logger.info(f"Pear API Response Body: {json.dumps(response_data, indent=2)}")
+            except Exception:
+                response_data = {"raw_response": response.text}
+                logger.info(f"Pear API Response Text: {response.text}")
+            
+            logger.info("=" * 80)
+            
+            if response.status_code in [200, 201]:
+                return {
+                    "success": True,
+                    "message": "Position closed successfully",
+                    "positionId": position_id,
+                    "pearResponse": response_data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Pear API returned {response.status_code}",
+                    "message": response_data.get("message") or response_data.get("error") or str(response_data),
+                    "positionId": position_id,
+                    "pearResponse": response_data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                
+    except httpx.TimeoutException:
+        logger.error("Pear API request timed out")
+        logger.info("=" * 80)
+        return {
+            "success": False,
+            "error": "Request to Pear API timed out",
+            "positionId": position_id,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to close position: {str(e)}")
+        logger.info("=" * 80)
+        return {
+            "success": False,
+            "error": str(e),
+            "positionId": position_id,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
 @router.get("/positions/open")
 async def get_open_positions(
     authorization: str = Query(default=None, description="Bearer token for Pear API"),

@@ -86,6 +86,7 @@ export const TradeScreen: React.FC = () => {
   const [openPositions, setOpenPositions] = useState<PearOpenPosition[]>([]);
   const [isLoadingPositions, setIsLoadingPositions] = useState(false);
   const [positionsError, setPositionsError] = useState<string | null>(null);
+  const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
 
   // Toggle chart expansion for a trade
   const toggleChart = (tradeId: string) => {
@@ -137,6 +138,48 @@ export const TradeScreen: React.FC = () => {
   useEffect(() => {
     fetchOpenPositions();
   }, [fetchOpenPositions, isConnected]);
+
+  // Close a position
+  const handleClosePosition = useCallback(async (positionId: string) => {
+    console.log('Closing position:', positionId);
+    setClosingPositionId(positionId);
+    
+    try {
+      const accessToken = getAccessToken();
+      const response = await TradeService.closePosition(
+        positionId,
+        {
+          executionType: 'MARKET',
+          twapDuration: 60,
+          twapIntervalSeconds: 30,
+          randomizeExecution: true,
+        },
+        accessToken || undefined
+      );
+      
+      if (response.success) {
+        console.log('Position closed successfully:', response.message);
+        setSuccessMessage(response.message || 'Position closed successfully!');
+        setShowSuccess(true);
+        
+        // Refresh positions after closing
+        fetchOpenPositions();
+        
+        setTimeout(() => {
+          setShowSuccess(false);
+        }, 3000);
+      } else {
+        console.error('Failed to close position:', response.error);
+        setError(response.error || 'Failed to close position');
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to close position';
+      console.error('Error closing position:', error);
+      setError(errorMsg);
+    } finally {
+      setClosingPositionId(null);
+    }
+  }, [getAccessToken, fetchOpenPositions]);
 
   const formatAddress = (address: string | null): string => {
     if (!address) return '';
@@ -782,6 +825,23 @@ export const TradeScreen: React.FC = () => {
                           <Text style={styles.positionDate}>
                             Opened: {new Date(position.createdAt).toLocaleDateString()}
                           </Text>
+                          <Pressable
+                            onPress={() => handleClosePosition(position.positionId)}
+                            disabled={closingPositionId === position.positionId}
+                            style={[
+                              styles.closePositionButton,
+                              closingPositionId === position.positionId && styles.closePositionButtonDisabled,
+                            ]}
+                          >
+                            {closingPositionId === position.positionId ? (
+                              <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                              <>
+                                <Ionicons name="close-circle-outline" size={16} color="#FFF" />
+                                <Text style={styles.closePositionButtonText}>Close</Text>
+                              </>
+                            )}
+                          </Pressable>
                         </View>
                       </View>
                     );
@@ -1922,6 +1982,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   positionFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
@@ -1929,5 +1992,22 @@ const styles = StyleSheet.create({
   positionDate: {
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.3)',
+  },
+  closePositionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: theme.colors.bearish,
+  },
+  closePositionButtonDisabled: {
+    opacity: 0.6,
+  },
+  closePositionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
   },
 });
