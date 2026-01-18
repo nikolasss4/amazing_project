@@ -22,10 +22,11 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'success' | 'error';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends Omit<PressableProps, 'style'> {
-  children: string;
+  children: React.ReactNode;
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  loadingText?: string;
   fullWidth?: boolean;
   style?: ViewStyle;
 }
@@ -39,6 +40,7 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   size = 'md',
   loading = false,
+  loadingText,
   fullWidth = false,
   disabled,
   onPress,
@@ -81,12 +83,18 @@ export const Button: React.FC<ButtonProps> = ({
     }
   };
 
+  // Get accessible label from children if it's a string
+  const accessibleLabel = typeof children === 'string' ? children : undefined;
+
   return (
     <AnimatedPressable
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={handlePress}
       disabled={disabled || loading}
+      accessibilityRole="button"
+      accessibilityLabel={loading && loadingText ? loadingText : accessibleLabel}
+      accessibilityState={{ disabled: disabled || loading }}
       style={[
         styles.base,
         styles[variant],
@@ -99,13 +107,23 @@ export const Button: React.FC<ButtonProps> = ({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator
-          color={variant === 'primary' ? '#FFF' : theme.colors.accent}
-        />
-      ) : (
+        <>
+          <ActivityIndicator
+            color={variant === 'primary' ? '#FFF' : theme.colors.accent}
+            style={loadingText ? styles.loadingSpinner : undefined}
+          />
+          {loadingText && (
+            <Text style={[styles.text, styles[`text_${size}`], styles[`text_${variant}`]]}>
+              {loadingText}
+            </Text>
+          )}
+        </>
+      ) : typeof children === 'string' ? (
         <Text style={[styles.text, styles[`text_${size}`], styles[`text_${variant}`]]}>
           {children}
         </Text>
+      ) : (
+        children
       )}
     </AnimatedPressable>
   );
@@ -160,6 +178,9 @@ const styles = StyleSheet.create({
   },
   fullWidth: {
     width: '100%',
+  },
+  loadingSpinner: {
+    marginRight: theme.spacing.sm,
   },
   // Text
   text: {

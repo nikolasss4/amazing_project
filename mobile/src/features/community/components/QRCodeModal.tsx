@@ -19,15 +19,23 @@ import { theme } from '@app/theme';
 interface QRCodeModalProps {
   visible: boolean;
   onClose: () => void;
+  userId: string;
   username: string;
 }
 
 const { width } = Dimensions.get('window');
 const QR_SIZE = Math.min(width - 120, 280);
 
+/**
+ * QR Code Modal
+ * 
+ * Displays user's QR code for friend addition.
+ * QR code contains: "risklaba:friend:{userId}"
+ */
 export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   visible,
   onClose,
+  userId,
   username,
 }) => {
   const handleClose = () => {
@@ -71,7 +79,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                       <View style={styles.qrIcon}>
                         <Ionicons name="qr-code" size={24} color="#FF6B35" />
                       </View>
-                      <Text style={styles.headerTitle}>Connect with Friends</Text>
+                      <Text style={styles.headerTitle}>Add Friends</Text>
                     </View>
                     <Pressable onPress={handleClose} style={styles.closeButton}>
                       <Ionicons name="close" size={24} color={theme.colors.textPrimary} />
@@ -178,8 +186,8 @@ const styles = StyleSheet.create({
   qrBorder: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: theme.borderRadius.lg,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 107, 53, 0.3)',
+    borderWidth: 0,
+    borderColor: 'transparent',
     pointerEvents: 'none',
   },
   instructions: {
@@ -196,5 +204,25 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.semibold,
     color: '#FF6B35',
   },
+  webFallback: {
+    width: QR_SIZE - 40,
+    height: QR_SIZE - 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.xl,
+  },
+  webFallbackText: {
+    marginTop: theme.spacing.md,
+    fontSize: theme.typography.sizes.md,
+    color: 'rgba(0, 0, 0, 0.7)',
+    textAlign: 'center',
+  },
+  webFallbackId: {
+    marginTop: theme.spacing.lg,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(0, 0, 0, 0.5)',
+    fontFamily: 'monospace',
+  },
 });
-

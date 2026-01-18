@@ -1,7 +1,18 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Trade Store
 import { TradePair, TradeTheme } from '../../features/trade/models';
+
+// API Base URL
+const getApiBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
+  // For mobile devices, use LAN IP
+  return 'http://10.0.11.138:8000';
+};
 
 interface TradeState {
   selectedTheme: TradeTheme | null;
@@ -140,3 +151,19 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setScreenshot: (uri) => set({ screenshotUri: uri }),
   clearChat: () => set({ messages: [], screenshotUri: null }),
 }));
+
+// User Store
+interface UserStore {
+  userId: string | null;
+  username: string | null;
+  setUser: (userId: string, username: string) => void;
+  clearUser: () => void;
+}
+
+export const useUserStore = create<UserStore>((set) => ({
+  userId: null,
+  username: null,
+  setUser: (userId: string, username: string) => set({ userId, username }),
+  clearUser: () => set({ userId: null, username: null }),
+}));
+

@@ -2,10 +2,12 @@
 
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from datetime import datetime
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
@@ -23,6 +25,28 @@ from app.improve.router_challenges import router as challenges_router
 from app.ai.router import router as ai_router
 
 logger = get_logger(__name__)
+
+
+# Debug Middleware to log all requests
+class DebugLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Log incoming request
+        print("\n" + "=" * 100)
+        print(f"📥 INCOMING REQUEST: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"Method: {request.method}")
+        print(f"Path: {request.url.path}")
+        print(f"Client: {request.client.host if request.client else 'Unknown'}")
+        print(f"Headers: {dict(request.headers)}")
+        print("=" * 100)
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Log response
+        print(f"📤 RESPONSE: {response.status_code}")
+        print("=" * 100 + "\n")
+        
+        return response
 
 
 @asynccontextmanager
@@ -46,6 +70,7 @@ app = FastAPI(
 )
 
 # Middleware
+app.add_middleware(DebugLoggingMiddleware)  # Add debug logging first
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -60,6 +85,14 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle uncaught exceptions."""
+    print("=" * 80)
+    print("❌ UNHANDLED EXCEPTION")
+    print(f"Path: {request.url.path}")
+    print(f"Method: {request.method}")
+    print(f"Error: {str(exc)}")
+    print(f"Type: {type(exc).__name__}")
+    print("=" * 80)
+    
     logger.error(
         "Unhandled exception",
         exc_info=exc,
@@ -79,6 +112,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 @app.get("/health", tags=["Health"])
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
+    print("💚 Health check endpoint called")
     return {"status": "healthy", "app": settings.APP_NAME}
 
 
@@ -103,3 +137,5 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
     )
+
+# python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
