@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -31,7 +31,7 @@ type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
 
 export const CommunityScreen: React.FC = () => {
-  const { streak, totalXP } = useLearnStore();
+  const { streak: storeStreak, totalXP: storeTotalXP } = useLearnStore();
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
   const [isFlipped, setIsFlipped] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -40,7 +40,10 @@ export const CommunityScreen: React.FC = () => {
   const flipRotation = useSharedValue(0);
   
   // Mock username - in real app, get from user store
-  const username = 'alex';
+  const username = 'TechBull';
+  // Use mock values if store values are 0, otherwise use store values
+  const streak = storeStreak > 0 ? storeStreak : 42;
+  const totalXP = storeTotalXP > 0 ? storeTotalXP : 1250;
 
   const handlePeriodSelect = (period: LeaderboardPeriod) => {
     setLeaderboardPeriod(period);
@@ -48,7 +51,14 @@ export const CommunityScreen: React.FC = () => {
   };
 
   const handleFlip = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
     const newIsFlipped = !isFlipped;
     setIsFlipped(newIsFlipped);
     flipRotation.value = withTiming(newIsFlipped ? 180 : 0, { duration: 600 });
@@ -154,7 +164,14 @@ export const CommunityScreen: React.FC = () => {
             <Text style={styles.title}>Community</Text>
             <Pressable
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                // Safe haptic call - no-op on web
+                if (Platform.OS !== 'web') {
+                  try {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  } catch (error) {
+                    // Silently fail if haptics are not available
+                  }
+                }
                 setShowQRModal(true);
               }}
               style={styles.qrButton}
@@ -607,8 +624,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   statValue: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.medium,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
     color: '#FFFFFF',
   },
   sectionNav: {

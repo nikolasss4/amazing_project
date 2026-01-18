@@ -1,16 +1,31 @@
 import * as Haptics from 'expo-haptics';
+import { Platform } from 'react-native';
 
 /**
  * Centralized haptic feedback patterns for the Improve feature
  * Provides consistent, well-tuned haptic responses
+ * Safe for web (no-op on web platform)
  */
+
+// Helper to safely call haptics (no-op on web)
+const safeHapticCall = (fn: () => void) => {
+  if (Platform.OS !== 'web') {
+    try {
+      fn();
+    } catch (error) {
+      // Silently fail if haptics are not available
+    }
+  }
+};
 
 export const HapticPatterns = {
   /**
    * Correct answer - Short, crisp success vibration
    */
   correctAnswer: () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    safeHapticCall(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    });
   },
 
   /**
@@ -18,24 +33,30 @@ export const HapticPatterns = {
    * Includes a double-tap pattern for emphasis
    */
   incorrectAnswer: () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }, 100);
+    safeHapticCall(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      }, 100);
+    });
   },
 
   /**
    * Card swipe - Light haptic tick
    */
   cardSwipe: () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    safeHapticCall(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    });
   },
 
   /**
    * Button press - Medium haptic feedback
    */
   buttonPress: () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    safeHapticCall(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    });
   },
 
   /**
@@ -43,16 +64,20 @@ export const HapticPatterns = {
    * Fires on reaching streak level 5+
    */
   streakMilestone: () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setTimeout(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, 150);
+    safeHapticCall(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }, 150);
+    });
   },
 
   /**
    * Card flip - Soft haptic tick
    */
   cardFlip: () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    safeHapticCall(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    });
   },
 };

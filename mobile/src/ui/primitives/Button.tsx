@@ -6,6 +6,7 @@ import {
   PressableProps,
   ViewStyle,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -52,7 +53,14 @@ export const Button: React.FC<ButtonProps> = ({
 
   const handlePressIn = () => {
     scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
   };
 
   const handlePressOut = () => {
@@ -61,7 +69,14 @@ export const Button: React.FC<ButtonProps> = ({
 
   const handlePress = (e: any) => {
     if (onPress && !disabled && !loading) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      // Safe haptic call - no-op on web
+      if (Platform.OS !== 'web') {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        } catch (error) {
+          // Silently fail if haptics are not available
+        }
+      }
       onPress(e);
     }
   };

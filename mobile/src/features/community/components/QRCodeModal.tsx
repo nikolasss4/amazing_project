@@ -6,41 +6,15 @@ import {
   Modal,
   Pressable,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import QRCode from 'react-native-qrcode-svg';
 import { theme } from '@app/theme';
-
-// QR Code placeholder component (until react-native-qrcode-svg is installed)
-const QRCodePlaceholder: React.FC<{ size: number }> = ({ size }) => {
-  // Create a simple grid pattern to simulate QR code
-  const gridSize = 25;
-  const cellSize = size / gridSize;
-  
-  return (
-    <View style={{ width: size, height: size, flexDirection: 'row', flexWrap: 'wrap' }}>
-      {Array.from({ length: gridSize * gridSize }).map((_, index) => {
-        const row = Math.floor(index / gridSize);
-        const col = index % gridSize;
-        // Create a pattern that looks somewhat like a QR code
-        const isDark = (row + col) % 3 === 0 || (row * col) % 7 === 0 || row === 0 || col === 0 || row === gridSize - 1 || col === gridSize - 1;
-        return (
-          <View
-            key={index}
-            style={{
-              width: cellSize,
-              height: cellSize,
-              backgroundColor: isDark ? '#000000' : '#FFFFFF',
-            }}
-          />
-        );
-      })}
-    </View>
-  );
-};
 
 interface QRCodeModalProps {
   visible: boolean;
@@ -57,13 +31,19 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   username,
 }) => {
   const handleClose = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
     onClose();
   };
 
-  // Generate QR code data - in real app, this would be a user ID, friend code, or URL
-  // For now, using a simple format: "risklaba:friend:username"
-  const qrData = `risklaba:friend:${username}`;
+  // QR code data - URL for community registration form
+  const qrData = 'https://docs.google.com/forms/d/e/1FAIpQLSc6MTr5ECPEKmIsQH161e6fD7-2daB6MD89a33MrVTy8itgMQ/viewform?usp=publish-editor';
 
   return (
     <Modal
@@ -101,7 +81,13 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                   {/* QR Code Container */}
                   <View style={styles.qrContainer}>
                     <View style={styles.qrWrapper}>
-                      <QRCodePlaceholder size={QR_SIZE - 40} />
+                      <QRCode
+                        value={qrData}
+                        size={QR_SIZE - 40}
+                        color="#000000"
+                        backgroundColor="#FFFFFF"
+                        quietZone={10}
+                      />
                     </View>
                     <View style={styles.qrBorder} />
                   </View>

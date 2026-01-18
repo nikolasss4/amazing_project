@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
-import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -24,9 +24,7 @@ import { LiquidFireBackground, LiquidFireBackgroundRef } from '../components/Liq
 import { CandlestickChart } from '../components/CandlestickChart';
 import { ScenarioCardSkeleton } from '../components/ScenarioCardSkeleton';
 import { EmptyState } from '../components/EmptyState';
-import { useSwipeGesture } from '../hooks/useSwipeGesture';
 import { HapticPatterns } from '../utils/haptics';
-import { GestureDetector } from 'react-native-gesture-handler';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -114,53 +112,30 @@ export const ImproveScreen: React.FC = () => {
   // Border color state: 0 = silver (neutral), 1 = green (correct), -1 = red (incorrect)
   const borderColorState = useSharedValue(0);
 
-  // Ref to hold the next scenario handler (avoids circular dependency)
-  const handleNextScenarioRef = useRef<() => void>(() => {});
-
-  // Swipe gesture for front card dismissal
-  const { gesture: swipeGesture, animatedStyle: swipeAnimatedStyle, nextCardAnimatedStyle, reset: resetSwipe } = useSwipeGesture({
-    onSwipeComplete: () => handleNextScenarioRef.current(),
-    onSwipeStart: () => HapticPatterns.cardSwipe(),
-  });
-
-  // Swipe gesture for back card (solution) - advances to next scenario
-  const { gesture: backSwipeGesture, animatedStyle: backSwipeAnimatedStyle, nextCardAnimatedStyle: backNextCardAnimatedStyle, reset: resetBackSwipe } = useSwipeGesture({
-    onSwipeComplete: () => handleNextScenarioRef.current(),
-    onSwipeStart: () => HapticPatterns.cardSwipe(),
-  });
 
   // Define handleNextScenario - advances to next card
   // Uses synchronous state updates to prevent race conditions
   const handleNextScenario = useCallback(() => {
-    // Update state for next card (synchronous batch)
-    setIsFlipped(false);
-    setSelectedAnswer(null);
-    setIsCorrect(false);
-    flipRotation.value = 0;
-    borderColorState.value = 0; // Reset to silver
-
+    // Update scenario index
     if (currentScenarioIndex < scenarios.length - 1) {
       setCurrentScenarioIndex(prev => prev + 1);
     } else {
       setCurrentScenarioIndex(0); // Loop back
     }
+    
+    // Reset ALL state
+    setIsFlipped(false);
+    setSelectedAnswer(null);
+    setIsCorrect(false);
+    setShowFeedback(false);
+    
+    // Reset all animated values
+    flipRotation.value = 0;
+    borderColorState.value = 0; // Reset to silver
+    feedbackOpacity.value = 0;
   }, [currentScenarioIndex, flipRotation, borderColorState, scenarios.length]);
 
-  // Keep ref up to date with latest callback
-  useEffect(() => {
-    handleNextScenarioRef.current = handleNextScenario;
-  }, [handleNextScenario]);
-
-  // Reset swipe animations when scenario changes
-  // Immediate reset since we use cancelAnimation in the hook
-  useEffect(() => {
-    resetSwipe();
-    resetBackSwipe();
-  }, [currentScenarioIndex, resetSwipe, resetBackSwipe]);
   
-  // Get next scenario for "deck" preview
-  const nextScenarioIndex = currentScenarioIndex < scenarios.length - 1 ? currentScenarioIndex + 1 : 0;
-  const nextScenario = scenarios[nextScenarioIndex];
 
   // Animate streak pulse when it increases
   useEffect(() => {
@@ -171,7 +146,7 @@ export const ImproveScreen: React.FC = () => {
       );
     }
     setPreviousStreak(streak);
-  }, [streak]);
+  }, [streak, previousStreak]);
 
   // Card flip animations
   const frontAnimatedStyle = useAnimatedStyle(() => {
@@ -205,8 +180,8 @@ export const ImproveScreen: React.FC = () => {
   }));
 
   // Select answer and immediately show solution
-  const handleAnswerSelect = (answer: Answer) => {
-    // Allow re-answering after flip back (isFlipped will be false)
+  const handleAnswerSelect = useCallback((answer: Answer) => {
+    // Don't allow answering if card is flipped
     if (isFlipped) return;
     
     setSelectedAnswer(answer);
@@ -243,18 +218,21 @@ export const ImproveScreen: React.FC = () => {
     // Update background and scores
     if (correct) {
       backgroundRef.current?.flashGreen();
-      addXP(currentScenario.xpReward);
+      // Calculate score using multiplicative system: 1, 2, 4, 8...
+      const newStreak = streak + 1;
+      const score = newStreak > 0 ? Math.pow(2, newStreak - 1) : 0;
+      addXP(score);
       incrementStreak();
       incrementCorrect();
       // Streak milestone haptic at level 5
-      if (streak + 1 >= 5) {
+      if (newStreak >= 5) {
         HapticPatterns.streakMilestone();
       }
     } else {
       backgroundRef.current?.flashRed();
       resetStreak();
     }
-  };
+  }, [isFlipped, currentScenario, borderColorState, flipRotation, feedbackOpacity, backgroundRef, addXP, incrementStreak, incrementCorrect, resetStreak, streak]);
 
   // Legacy function kept for reference but no longer used
   const handleShowSolution = () => {
@@ -275,14 +253,12 @@ export const ImproveScreen: React.FC = () => {
 
   // Handle "Next" button press (from solution card)
   const handleNext = () => {
-    resetSwipe();
-    resetBackSwipe();
+    // Reset is already called in handleNextScenario, but call it here too for safety
     handleNextScenario();
   };
 
-  // Handle "Skip" button press (triggers swipe animation then advances)
+  // Handle "Skip" button press (advances to next question)
   function handleSkip() {
-    HapticPatterns.cardSwipe();
     handleNextScenario();
   }
 
@@ -305,12 +281,6 @@ export const ImproveScreen: React.FC = () => {
         <View style={styles.header}>
           <Text style={styles.title}>Improve</Text>
           <View style={styles.headerRight}>
-            {/* Scenario progress */}
-            <View style={styles.progressChip}>
-              <Text style={styles.progressText}>
-                {currentScenarioIndex + 1} / {scenarios.length}
-              </Text>
-            </View>
             {/* Streak indicator with pulse animation */}
             <Animated.View style={[styles.streakChipContainer, streakAnimatedStyle]}>
               <GlassPanel style={[styles.streakChip, streak >= 5 && styles.streakChipGlow]}>
@@ -320,7 +290,7 @@ export const ImproveScreen: React.FC = () => {
                   color={streak >= 5 ? theme.colors.warning : theme.colors.textSecondary}
                 />
                 <Text style={[styles.streakText, streak >= 5 && styles.streakTextGlow]}>
-                  {streak}
+                  {streak > 0 ? Math.pow(2, streak - 1) : 0}
                 </Text>
               </GlassPanel>
             </Animated.View>
@@ -339,60 +309,10 @@ export const ImproveScreen: React.FC = () => {
             {/* Scenario Card - only show when loaded and has scenarios */}
             {!isLoading && scenarios.length > 0 && currentScenario && (
               <>
-                {/* Next card preview (behind current card) - only visible during swipe on front */}
-                {!isFlipped && nextScenario && (
-                  <Animated.View 
-                    key={`next-front-${nextScenario.id}`}
-                    style={[styles.cardWrapper, styles.nextCardBehind, nextCardAnimatedStyle]}
-                  >
-                    <View style={styles.gradientBorderContainer}>
-                      <LinearGradient
-                        colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                      <View style={styles.gradientBorderInner} />
-                    </View>
-                    <View style={styles.cardContent}>
-                      <View style={styles.chartSection}>
-                        <CandlestickChart
-                          tradingPair={nextScenario.tradingPair}
-                          timeframe={nextScenario.timeframe}
-                          seed={nextScenario.id}
-                          showOutcome={null}
-                        />
-                      </View>
-                      <View style={styles.bottomSection}>
-                        <View style={styles.scenarioContainer}>
-                          <Text style={styles.scenarioLabel}>SCENARIO</Text>
-                          <Text style={styles.scenarioText} numberOfLines={2}>
-                            {nextScenario.economicContext}
-                          </Text>
-                        </View>
-                        <View style={styles.actionsContainer}>
-                          <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
-                            <View style={styles.upDownButtonContent}>
-                              <Ionicons name="trending-up" size={20} color={theme.colors.textTertiary} />
-                              <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Up</Text>
-                            </View>
-                          </View>
-                          <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
-                            <View style={styles.upDownButtonContent}>
-                              <Ionicons name="trending-down" size={20} color={theme.colors.textTertiary} />
-                              <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Down</Text>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                    </View>
-                  </Animated.View>
-                )}
-
                 {/* Front of card with gradient border */}
                 <Animated.View 
                   key={`front-${currentScenario.id}`}
-                  style={[styles.cardWrapper, frontAnimatedStyle, swipeAnimatedStyle]}
+                  style={[styles.cardWrapper, frontAnimatedStyle]}
                 >
                   {/* Gradient Border that flips with the card */}
                   <View style={styles.gradientBorderContainer} pointerEvents="none">
@@ -400,19 +320,17 @@ export const ImproveScreen: React.FC = () => {
                     <View style={styles.gradientBorderInner} />
                   </View>
                   <View style={styles.cardContent}>
-                    {/* Top section: Chart - swipeable area */}
-                    <GestureDetector gesture={swipeGesture}>
-                      <View style={styles.chartSection}>
-                        <CandlestickChart
-                          tradingPair={currentScenario.tradingPair}
-                          timeframe={currentScenario.timeframe}
-                          seed={currentScenario.id}
-                          showOutcome={null}
-                        />
-                      </View>
-                    </GestureDetector>
+                    {/* Top section: Chart */}
+                    <View style={styles.chartSection}>
+                      <CandlestickChart
+                        tradingPair={currentScenario.tradingPair}
+                        timeframe={currentScenario.timeframe}
+                        seed={currentScenario.id}
+                        showOutcome={null}
+                      />
+                    </View>
 
-                  {/* Bottom section: Split left/right - NOT wrapped in gesture detector for button clickability */}
+                  {/* Bottom section: Split left/right */}
                   <View style={styles.bottomSection}>
                     {/* Left: Scenario text */}
                     <View style={styles.scenarioContainer}>
@@ -444,63 +362,13 @@ export const ImproveScreen: React.FC = () => {
                     <Text style={styles.skipText}>Skip</Text>
                     <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
                   </Pressable>
-                </View>
-              </Animated.View>
-
-            {/* Next card preview behind solution card - visible during swipe on back */}
-            {isFlipped && nextScenario && (
-              <Animated.View 
-                key={`next-back-${nextScenario.id}`}
-                style={[styles.cardWrapper, styles.nextCardBehind, backNextCardAnimatedStyle]}
-              >
-                <View style={styles.gradientBorderContainer}>
-                  <LinearGradient
-                    colors={['#E8E8E8', '#C0C0C0', '#A8A8A8', '#D4D4D4', '#B8B8B8', '#E0E0E0']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <View style={styles.gradientBorderInner} />
-                </View>
-                <View style={styles.cardContent}>
-                  <View style={styles.chartSection}>
-                    <CandlestickChart
-                      tradingPair={nextScenario.tradingPair}
-                      timeframe={nextScenario.timeframe}
-                      seed={nextScenario.id}
-                      showOutcome={null}
-                    />
                   </View>
-                  <View style={styles.bottomSection}>
-                    <View style={styles.scenarioContainer}>
-                      <Text style={styles.scenarioLabel}>SCENARIO</Text>
-                      <Text style={styles.scenarioText} numberOfLines={2}>
-                        {nextScenario.economicContext}
-                      </Text>
-                    </View>
-                    <View style={styles.actionsContainer}>
-                      <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
-                        <View style={styles.upDownButtonContent}>
-                          <Ionicons name="trending-up" size={20} color={theme.colors.textTertiary} />
-                          <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Up</Text>
-                        </View>
-                      </View>
-                      <View style={[styles.upDownButton, styles.upDownButtonDisabled]}>
-                        <View style={styles.upDownButtonContent}>
-                          <Ionicons name="trending-down" size={20} color={theme.colors.textTertiary} />
-                          <Text style={[styles.upDownButtonText, { color: theme.colors.textTertiary }]}>Down</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </Animated.View>
-            )}
+                </Animated.View>
 
-            {/* Back of card (Solution) with gradient border - also swipeable */}
+            {/* Back of card (Solution) with gradient border */}
             <Animated.View 
               key={`back-${currentScenario.id}`}
-              style={[styles.cardWrapper, styles.cardBack, backAnimatedStyle, backSwipeAnimatedStyle]}
+              style={[styles.cardWrapper, styles.cardBack, backAnimatedStyle]}
             >
               {/* Gradient Border that flips with the card */}
               <View style={styles.gradientBorderContainer} pointerEvents="none">
@@ -509,16 +377,14 @@ export const ImproveScreen: React.FC = () => {
               </View>
               <View style={styles.cardContent}>
                 {/* Top section: Solution chart with outcome */}
-                <GestureDetector gesture={backSwipeGesture}>
-                  <View style={styles.chartSection}>
-                    <CandlestickChart
-                      tradingPair={currentScenario.tradingPair}
-                      timeframe={currentScenario.timeframe}
-                      seed={`${currentScenario.id}-solution`}
-                      showOutcome={currentScenario.correctAnswer as 'up' | 'down'}
-                    />
-                  </View>
-                </GestureDetector>
+                <View style={styles.chartSection}>
+                  <CandlestickChart
+                    tradingPair={currentScenario.tradingPair}
+                    timeframe={currentScenario.timeframe}
+                    seed={`${currentScenario.id}-solution`}
+                    showOutcome={currentScenario.correctAnswer as 'up' | 'down'}
+                  />
+                </View>
 
                 {/* Bottom section: Analysis & Actions - NOT wrapped in gesture detector */}
                 <View style={styles.bottomSection}>
@@ -650,7 +516,14 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
 
   const handlePress = () => {
     if (!disabled) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Safe haptic call - no-op on web
+      if (Platform.OS !== 'web') {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch (error) {
+          // Silently fail if haptics are not available
+        }
+      }
       onPress();
     }
   };
@@ -739,7 +612,14 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
 
   const handlePress = () => {
     if (!disabled) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Safe haptic call - no-op on web
+      if (Platform.OS !== 'web') {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch (error) {
+          // Silently fail if haptics are not available
+        }
+      }
       onPress();
     }
   };
@@ -890,9 +770,6 @@ const styles = StyleSheet.create({
   },
   cardBack: {
     backfaceVisibility: 'hidden',
-  },
-  nextCardBehind: {
-    zIndex: -1,
   },
   cardContent: {
     position: 'absolute',
