@@ -7,6 +7,7 @@ import Animated, {
   withTiming,
   withSpring,
   withSequence,
+  withDelay,
   interpolate,
   runOnJS,
   Easing,
@@ -25,6 +26,25 @@ import { CandlestickChart } from '../components/CandlestickChart';
 import { ScenarioCardSkeleton } from '../components/ScenarioCardSkeleton';
 import { EmptyState } from '../components/EmptyState';
 import { HapticPatterns } from '../utils/haptics';
+import { Avatar } from '../../community/components/Avatar';
+
+// Calculate streak display value: multiply (double) until 30, then add 10
+const calculateStreakValue = (streak: number): number => {
+  if (streak <= 0) return 0;
+  
+  // Find the streak count where doubling would exceed 30
+  // 1, 2, 4, 8, 16 (streak 5) - next would be 32 which exceeds 30
+  const maxDoubleStreak = 5; // At streak 5, value is 16
+  
+  if (streak <= maxDoubleStreak) {
+    return Math.pow(2, streak - 1); // 1, 2, 4, 8, 16
+  } else {
+    // After streak 5, add 10 for each additional correct answer
+    const baseValue = Math.pow(2, maxDoubleStreak - 1); // 16
+    const additionalCorrect = streak - maxDoubleStreak;
+    return baseValue + (additionalCorrect * 10); // 26, 36, 46, 56...
+  }
+};
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -101,6 +121,8 @@ export const ImproveScreen: React.FC = () => {
   const [showFeedback, setShowFeedback] = useState(false);
   const [previousStreak, setPreviousStreak] = useState(streak);
   const [isLoading, setIsLoading] = useState(false);
+  const [showStreakTransfer, setShowStreakTransfer] = useState(false);
+  const [transferAmount, setTransferAmount] = useState(0);
   const scenarios = mockScenarios; // In production, this would come from an API
 
   const backgroundRef = useRef<LiquidFireBackgroundRef>(null);
@@ -112,6 +134,13 @@ export const ImproveScreen: React.FC = () => {
   
   // Border color state: 0 = silver (neutral), 1 = green (correct), -1 = red (incorrect)
   const borderColorState = useSharedValue(0);
+  
+  // Animation values for streak transfer
+  const streakTransferY = useSharedValue(0);
+  const streakTransferX = useSharedValue(0);
+  const streakTransferScale = useSharedValue(1);
+  const streakTransferOpacity = useSharedValue(0);
+  const lightningPulse = useSharedValue(1);
 
 
   // Define handleNextScenario - advances to next card
@@ -175,6 +204,21 @@ export const ImproveScreen: React.FC = () => {
   const streakAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: streakPulse.value }],
   }));
+  
+  // Lightning chip animated style (pulse when receiving points)
+  const lightningAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: lightningPulse.value }],
+  }));
+  
+  // Streak transfer animation (flying from streak to lightning)
+  const streakTransferAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: streakTransferX.value },
+      { translateY: streakTransferY.value },
+      { scale: streakTransferScale.value },
+    ],
+    opacity: streakTransferOpacity.value,
+  }));
 
   // Feedback overlay animation
   const feedbackAnimatedStyle = useAnimatedStyle(() => ({
@@ -225,21 +269,57 @@ export const ImproveScreen: React.FC = () => {
     // Update background and scores
     if (correct) {
       backgroundRef.current?.flashGreen();
-      // Calculate score using multiplicative system: 1, 2, 4, 8...
-      const newStreak = streak + 1;
-      const score = newStreak > 0 ? Math.pow(2, newStreak - 1) : 0;
-      addXP(score);
+      // Only increment streak - points accumulate in streak counter
+      // Points will transfer to lightning only when user fails
       incrementStreak();
       incrementCorrect();
       // Streak milestone haptic at level 5
+      const newStreak = streak + 1;
       if (newStreak >= 5) {
         HapticPatterns.streakMilestone();
       }
     } else {
       backgroundRef.current?.flashRed();
+      
+      // Animate streak points transfer to lightning before resetting
+      const currentStreakValue = calculateStreakValue(streak);
+      if (currentStreakValue > 0) {
+        setTransferAmount(currentStreakValue);
+        setShowStreakTransfer(true);
+        
+        // Reset animation values
+        streakTransferX.value = 100; // Start from right (near streak chip)
+        streakTransferY.value = 0;
+        streakTransferScale.value = 1;
+        streakTransferOpacity.value = 1;
+        
+        // Animate flying to the left (to lightning chip)
+        streakTransferX.value = withTiming(-100, { duration: 600, easing: Easing.out(Easing.ease) });
+        streakTransferY.value = withSequence(
+          withTiming(-30, { duration: 300, easing: Easing.out(Easing.ease) }),
+          withTiming(0, { duration: 300, easing: Easing.in(Easing.ease) })
+        );
+        streakTransferScale.value = withSequence(
+          withTiming(1.3, { duration: 300 }),
+          withTiming(0.8, { duration: 300 })
+        );
+        streakTransferOpacity.value = withDelay(400, withTiming(0, { duration: 200 }));
+        
+        // Pulse the lightning chip when points arrive
+        setTimeout(() => {
+          lightningPulse.value = withSequence(
+            withSpring(1.3, { damping: 5, stiffness: 200 }),
+            withSpring(1, { damping: 8, stiffness: 200 })
+          );
+          // Add the streak points to total XP
+          addXP(currentStreakValue);
+          setShowStreakTransfer(false);
+        }, 600);
+      }
+      
       resetStreak();
     }
-  }, [isFlipped, currentScenario, borderColorState, flipRotation, feedbackOpacity, backgroundRef, addXP, incrementStreak, incrementCorrect, resetStreak, streak]);
+  }, [isFlipped, currentScenario, borderColorState, flipRotation, feedbackOpacity, backgroundRef, addXP, incrementStreak, incrementCorrect, resetStreak, streak, streakTransferX, streakTransferY, streakTransferScale, streakTransferOpacity, lightningPulse]);
 
   // Legacy function kept for reference but no longer used
   const handleShowSolution = () => {
@@ -299,6 +379,31 @@ export const ImproveScreen: React.FC = () => {
         <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
+          {/* Left side - Profile and Lightning Points */}
+          <View style={styles.headerLeft}>
+            <Avatar
+              userId="3"
+              username="TechBull"
+              size={48}
+              isYou={true}
+            />
+            <Animated.View style={[styles.lightningChipContainer, lightningAnimatedStyle]}>
+              <GlassPanel style={styles.lightningChip}>
+                <View style={styles.lightningChipContent}>
+                  <Ionicons
+                    name="flash"
+                    size={18}
+                    color="#FFD700"
+                  />
+                  <Text style={styles.lightningText}>
+                    {totalXP}
+                  </Text>
+                </View>
+              </GlassPanel>
+            </Animated.View>
+          </View>
+          
+          {/* Right side - Streak */}
           <View style={styles.headerRight}>
             {/* Streak indicator with pulse animation */}
             <Animated.View style={[styles.streakChipContainer, streakAnimatedStyle]}>
@@ -313,13 +418,21 @@ export const ImproveScreen: React.FC = () => {
                     style={[styles.streakText, streak >= 5 && styles.streakTextGlow]}
                     numberOfLines={1}
                   >
-                    {streak > 0 ? Math.pow(2, streak - 1) : 0}
+                    {calculateStreakValue(streak)}
                   </Text>
                 </View>
               </GlassPanel>
             </Animated.View>
           </View>
         </View>
+        
+        {/* Streak Transfer Animation */}
+        {showStreakTransfer && (
+          <Animated.View style={[styles.streakTransferBadge, streakTransferAnimatedStyle]}>
+            <Ionicons name="flame" size={20} color={theme.colors.warning} />
+            <Text style={styles.streakTransferText}>+{transferAmount}</Text>
+          </Animated.View>
+        )}
 
         {/* Scenario Card Container with padding */}
         <View style={styles.cardContainerWrapper}>
@@ -685,19 +798,55 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
   },
-  title: {
-    fontSize: theme.typography.sizes.xxl,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.textPrimary,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
+  },
+  lightningChipContainer: {},
+  lightningChip: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+  lightningChipContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+  },
+  lightningText: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFD700',
+  },
+  streakTransferBadge: {
+    position: 'absolute',
+    top: 80,
+    left: '50%',
+    marginLeft: -40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: 'rgba(255, 107, 53, 0.3)',
+    borderRadius: theme.borderRadius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.5)',
+    zIndex: 1000,
+  },
+  streakTransferText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.warning,
   },
   progressChip: {
     paddingHorizontal: theme.spacing.md,
