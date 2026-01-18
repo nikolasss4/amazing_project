@@ -933,6 +933,11 @@ const styles = StyleSheet.create({
   upDownButtonDisabled: {
     opacity: 0.4,
   },
+  upDownButtonBackground: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+  },
   buttonInnerGlow: {
     position: 'absolute',
     top: 2,

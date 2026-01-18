@@ -19,6 +19,17 @@ import { captureRef } from 'react-native-view-shot';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+
+// Define cache directory for legacy compatibility
+const getCacheDirectory = () => {
+  // Access through the new API if available, fallback for compatibility
+  try {
+    // @ts-ignore - cacheDirectory may exist on some versions
+    return FileSystem.cacheDirectory || `${FileSystem.Paths?.cache?.uri}/` || '';
+  } catch {
+    return '';
+  }
+};
 import Markdown from 'react-native-markdown-display';
 import { GlassPanel } from '@ui/primitives/GlassPanel';
 import { Button } from '@ui/primitives/Button';
@@ -157,7 +168,7 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
           
           transcriptRef.current = ''; // Reset transcript
           
-          recognition.onstart = () => {
+          (recognition as any).onstart = () => {
             console.log('Speech recognition started');
           };
           
@@ -584,7 +595,7 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
         audioUri = `data:audio/mpeg;base64,${audioBase64}`;
       } else {
         // Native: Write to file system
-        audioUri = `${FileSystem.cacheDirectory}voice_response_${Date.now()}.mp3`;
+        audioUri = `${getCacheDirectory()}voice_response_${Date.now()}.mp3`;
         await FileSystem.writeAsStringAsync(audioUri, audioBase64, {
           encoding: 'base64',
         });
@@ -600,7 +611,7 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef, c
       setIsPlayingAudio(true);
 
       // Clean up when finished
-      newSound.setOnPlaybackStatusUpdate((status) => {
+      newSound.setOnPlaybackStatusUpdate((status: any) => {
         if (status.isLoaded) {
           // Only stop when audio actually finishes, not when it's paused/stopped manually
           if (status.didJustFinish) {

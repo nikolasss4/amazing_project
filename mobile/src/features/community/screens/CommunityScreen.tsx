@@ -964,7 +964,6 @@ const CommunityScreenContent: React.FC = () => {
       <QRCodeModal
         visible={showQRModal}
         onClose={() => setShowQRModal(false)}
-        userId={userId || ''}
         username={username || ''}
       />
 

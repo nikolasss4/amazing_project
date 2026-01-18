@@ -17,6 +17,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '@app/theme';
 import { CommunityService } from '../services/CommunityService';
 
+// Type for barcode scan result
+interface BarcodeScanningResult {
+  type: string;
+  data: string;
+}
+
 // Conditional import for web compatibility
 let Camera: any = null;
 let CameraView: any = null;

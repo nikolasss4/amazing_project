@@ -23,6 +23,12 @@ export const colors = {
   accentHover: '#2563EB',
   accentMuted: 'rgba(59, 130, 246, 0.2)',
 
+  // Primary (alias for accent, used in some components)
+  primary: '#FF6B35', // Orange
+  
+  // Info
+  info: '#3498db', // Blue info color
+
   // Success/Error/Warning
   success: '#10B981',
   successMuted: 'rgba(16, 185, 129, 0.2)',

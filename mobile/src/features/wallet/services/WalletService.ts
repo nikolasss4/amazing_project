@@ -416,7 +416,7 @@ class WalletService {
   /**
    * Format wallet address for display (e.g., 0x742d...0bEb)
    */
-  static formatAddress(address: string): string {
+  formatAddress(address: string): string {
     if (!address || address.length < 10) return address;
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   }
@@ -424,7 +424,7 @@ class WalletService {
   /**
    * Validate Ethereum address format
    */
-  static isValidAddress(address: string): boolean {
+  isValidAddress(address: string): boolean {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
   }
 }

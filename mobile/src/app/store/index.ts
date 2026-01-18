@@ -158,14 +158,19 @@ const getApiBaseUrl = () => {
   return 'http://10.0.11.138:8000';
 };
 
+type AuthStep = 'idle' | 'getting_message' | 'signing' | 'authenticating' | 'setting_up_wallet' | 'complete';
+
 interface WalletState {
   walletAddress: string | null;
   privateKey: string | null;
   isConnected: boolean;
   isAuthenticating: boolean;
+  isConnecting: boolean;
+  authStep: AuthStep;
+  error: string | null;
   accessToken: string | null;
   authError: string | null;
-  connect: (address: string, privateKey: string) => Promise<void>;
+  connect: (address: string, privateKey?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   initialize: () => Promise<void>;
   getAccessToken: () => string | null;
@@ -187,23 +192,26 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   privateKey: null,
   isConnected: false,
   isAuthenticating: false,
+  isConnecting: false,
+  authStep: 'idle' as AuthStep,
+  error: null,
   accessToken: null,
   authError: null,
   
-  connect: async (address: string, privateKey: string) => {
+  connect: async (address: string, privateKey?: string) => {
     // Validate address format
     const trimmedAddress = address.trim();
     if (!isValidEthAddress(trimmedAddress)) {
       throw new Error('Invalid wallet address format. Please enter a valid Ethereum address (0x...)');
     }
     
-    // Validate private key format
-    const trimmedPrivateKey = privateKey.trim();
-    if (!isValidPrivateKey(trimmedPrivateKey)) {
+    // Private key is optional now
+    const trimmedPrivateKey = privateKey?.trim() || '';
+    if (trimmedPrivateKey && !isValidPrivateKey(trimmedPrivateKey)) {
       throw new Error('Invalid private key format. Please enter a valid 64-character hex private key.');
     }
     
-    set({ isAuthenticating: true, authError: null });
+    set({ isAuthenticating: true, isConnecting: true, authStep: 'getting_message', error: null, authError: null });
     
     try {
       const apiBaseUrl = getApiBaseUrl();
@@ -238,9 +246,11 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       
       if (!result.success) {
         const errorMsg = result.error || result.message || 'Authentication failed';
-        set({ isAuthenticating: false, authError: errorMsg });
+        set({ isAuthenticating: false, isConnecting: false, authStep: 'idle', error: errorMsg, authError: errorMsg });
         throw new Error(errorMsg);
       }
+      
+      set({ authStep: 'setting_up_wallet' });
       
       // Store tokens, address, and private key in AsyncStorage for persistence
       await AsyncStorage.setItem(WALLET_ADDRESS_KEY, trimmedAddress);
@@ -255,6 +265,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         privateKey: trimmedPrivateKey,
         isConnected: true,
         isAuthenticating: false,
+        isConnecting: false,
+        authStep: 'complete',
+        error: null,
         accessToken: result.accessToken || null,
         authError: null,
       });
@@ -262,7 +275,8 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       console.log('Wallet connected and authenticated:', trimmedAddress);
     } catch (error) {
       console.error('Wallet connection failed:', error);
-      set({ isAuthenticating: false });
+      const errorMsg = error instanceof Error ? error.message : 'Failed to authenticate wallet';
+      set({ isAuthenticating: false, isConnecting: false, authStep: 'idle', error: errorMsg });
       throw error instanceof Error ? error : new Error('Failed to authenticate wallet');
     }
   },
@@ -277,6 +291,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         walletAddress: null,
         privateKey: null,
         isConnected: false,
+        isConnecting: false,
+        authStep: 'idle' as AuthStep,
+        error: null,
         accessToken: null,
         authError: null,
       });
@@ -318,4 +335,19 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   getPrivateKey: () => {
     return get().privateKey;
   },
+}));
+
+// User Store
+interface UserStore {
+  userId: string | null;
+  username: string | null;
+  setUser: (userId: string, username: string) => void;
+  clearUser: () => void;
+}
+
+export const useUserStore = create<UserStore>((set) => ({
+  userId: null,
+  username: null,
+  setUser: (userId: string, username: string) => set({ userId, username }),
+  clearUser: () => set({ userId: null, username: null }),
 }));
