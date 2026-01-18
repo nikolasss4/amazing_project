@@ -131,3 +131,19 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setScreenshot: (uri) => set({ screenshotUri: uri }),
   clearChat: () => set({ messages: [], screenshotUri: null }),
 }));
+
+// User Store
+interface UserStore {
+  userId: string | null;
+  username: string | null;
+  setUser: (userId: string, username: string) => void;
+  clearUser: () => void;
+}
+
+export const useUserStore = create<UserStore>((set) => ({
+  userId: null,
+  username: null,
+  setUser: (userId: string, username: string) => set({ userId, username }),
+  clearUser: () => set({ userId: null, username: null }),
+}));
+

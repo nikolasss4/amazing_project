@@ -1,0 +1,337 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  username        String    @unique
+  email           String?   @unique
+  profileMetadata String?   // JSON as string for SQLite
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  friendshipsAsUser    Friendship[]        @relation("UserFriendships")
+  friendshipsAsFriend  Friendship[]        @relation("FriendFriendships")
+  narrativeFollowers   NarrativeFollower[]
+  userMetrics          UserMetric[]
+  socialPosts          SocialPost[]
+  postLikes            PostLike[]
+  marketMessages       MarketMessage[]
+
+  @@index([username])
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
+  createdAt DateTime @default(now())
+
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendFriendships", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([userId])
+  @@index([friendId])
+}
+
+model UserMetric {
+  id           String   @id @default(uuid())
+  userId       String
+  period       String   // 'today', 'week', 'month', 'all_time'
+  returnPercent Float
+  winRate      Float
+  tradesCount  Int      @default(0)
+  calculatedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+  @@index([userId, period])
+}
+
+model Narrative {
+  id            String   @id @default(uuid())
+  title         String
+  description   String?
+  triggerType   String   // 'event', 'person', 'source'
+  triggerValue  String?
+  sentiment     String   // 'bullish', 'bearish', 'neutral'
+  mentionCount  Int      @default(0)
+  velocity      Float    @default(0) // % change in mentions
+  status        String   @default("active") // 'active', 'archived'
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  assets  NarrativeAsset[]
+  events  NarrativeEvent[]
+  posts   IngestedPost[]
+  pulse   CommunityPulse[]
+
+  @@index([status])
+  @@index([sentiment])
+}
+
+model NarrativeAsset {
+  id          String    @id @default(uuid())
+  narrativeId String
+  assetSymbol String
+  impact      Float?
+  createdAt   DateTime  @default(now())
+
+  narrative Narrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+
+  @@unique([narrativeId, assetSymbol])
+  @@index([narrativeId])
+}
+
+model NarrativeEvent {
+  id          String    @id @default(uuid())
+  narrativeId String
+  eventTime   DateTime
+  description String?
+  createdAt   DateTime  @default(now())
+
+  narrative Narrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+
+  @@index([narrativeId])
+}
+
+model SocialPost {
+  id         String     @id @default(uuid())
+  userId     String
+  content    String
+  sentiment  String     // 'bullish', 'bearish', 'neutral'
+  likesCount Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tickers   PostTicker[]
+  likes     PostLike[]
+
+  @@index([userId])
+  @@index([sentiment])
+}
+
+model PostTicker {
+  id       String   @id @default(uuid())
+  postId   String
+  ticker   String
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([ticker])
+}
+
+model PostLike {
+  id       String   @id @default(uuid())
+  postId   String
+  userId   String
+  createdAt DateTime @default(now())
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model TrackedAccount {
+  id           String    @id @default(uuid())
+  platform     String    @default("twitter")
+  accountHandle String   @unique
+  accountName  String?
+  accountType  String?   // 'celebrity', 'politician', 'influencer', 'blogger'
+  isActive     Boolean   @default(true)
+  lastFetchedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  posts IngestedPost[]
+
+  @@index([isActive, platform])
+}
+
+model IngestedPost {
+  id               String    @id @default(uuid())
+  trackedAccountId String
+  externalPostId   String    @unique
+  content          String
+  postedAt         DateTime
+  engagementLikes  Int       @default(0)
+  engagementRetweets Int     @default(0)
+  keywords         String    // JSON array as string for SQLite
+  tickers          String    // JSON array as string for SQLite
+  hashtags         String    // JSON array as string for SQLite
+  narrativeId      String?
+  ingestedAt       DateTime  @default(now())
+
+  account   TrackedAccount @relation(fields: [trackedAccountId], references: [id], onDelete: Cascade)
+  narrative Narrative?     @relation(fields: [narrativeId], references: [id], onDelete: SetNull)
+
+  @@index([trackedAccountId])
+  @@index([narrativeId])
+}
+
+model CommunityPulse {
+  id             String    @id @default(uuid())
+  narrativeId    String?
+  bullishPercent Float
+  bearishPercent Float
+  neutralPercent Float
+  discussionCount Int      @default(0)
+  calculatedAt   DateTime  @default(now())
+  period         String    // 'hour', 'day', 'week'
+
+  narrative Narrative? @relation(fields: [narrativeId], references: [id], onDelete: SetNull)
+
+  @@index([narrativeId])
+}
+
+model NewsArticle {
+  id          String   @id @default(uuid())
+  source      String   // Source identifier (e.g., 'reuters', 'bloomberg', 'mock')
+  title       String
+  content     String   // Full article content
+  url         String   @unique
+  publishedAt DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([source])
+  @@index([publishedAt])
+  @@index([createdAt])
+}
+
+model NewsSource {
+  id       String  @id @default(uuid())
+  name     String  @unique  // e.g., 'reuters', 'bloomberg', 'mock'
+  category String  // 'crypto', 'macro', 'tech', 'politics'
+  active   Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([category])
+}
+
+model ArticleEntity {
+  id        String   @id @default(uuid())
+  articleId String   // Can reference NewsArticle.id OR ExternalPost.id
+  entity    String   // The extracted entity text
+  type      String   // 'keyword' | 'ticker' | 'person' | 'org'
+  createdAt DateTime @default(now())
+
+  // Removed foreign key constraint to allow references to both NewsArticle and ExternalPost
+
+  @@index([articleId])
+  @@index([type])
+  @@index([entity])
+}
+
+model DetectedNarrative {
+  id        String   @id @default(uuid())
+  title     String
+  summary   String
+  sentiment String   @default("neutral") // 'bullish' | 'bearish' | 'neutral'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  articles  DetectedNarrativeArticle[]
+  metrics   NarrativeMetric[]
+  followers NarrativeFollower[]
+  messages  MarketMessage[]
+
+  @@index([createdAt])
+  @@index([sentiment])
+}
+
+model MarketMessage {
+  id          String   @id @default(uuid())
+  narrativeId String
+  userId      String
+  text        String
+  createdAt   DateTime @default(now())
+
+  narrative DetectedNarrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([narrativeId, createdAt])
+  @@index([userId])
+}
+
+model NarrativeFollower {
+  id          String   @id @default(uuid())
+  userId      String
+  narrativeId String
+  createdAt   DateTime @default(now())
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  narrative DetectedNarrative  @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, narrativeId])
+  @@index([userId])
+  @@index([narrativeId])
+}
+
+model NarrativeMetric {
+  id            String   @id @default(uuid())
+  narrativeId   String
+  period        String   // '1h' | '24h'
+  mentionCount  Int      // Number of articles
+  velocity      Float    // % change from previous period
+  calculatedAt  DateTime @default(now())
+
+  narrative DetectedNarrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+
+  @@index([narrativeId])
+  @@index([period])
+  @@index([calculatedAt])
+}
+
+model DetectedNarrativeArticle {
+  id          String   @id @default(uuid())
+  narrativeId String
+  articleId   String   // Can reference NewsArticle.id OR ExternalPost.id
+  createdAt   DateTime @default(now())
+
+  narrative DetectedNarrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
+  // Removed foreign key to NewsArticle to allow references to both NewsArticle and ExternalPost
+
+  @@unique([narrativeId, articleId])
+  @@index([narrativeId])
+  @@index([articleId])
+}
+
+// External social posts (Twitter/X, etc.)
+model ExternalPost {
+  id           String   @id @default(uuid())
+  platform     String   // 'x', 'twitter', etc.
+  authorHandle String   // Username/handle (without @)
+  content      String   // Post text
+  engagement   String   // JSON string: { likes, reposts, replies, views }
+  publishedAt  DateTime // When the post was created on the platform
+  url          String?  // Link to original post
+  postId       String?  // Platform-specific post ID
+  createdAt    DateTime @default(now()) // When ingested into our system
+  updatedAt    DateTime @updatedAt
+
+  @@unique([platform, postId]) // Prevent duplicate posts
+  @@index([platform])
+  @@index([authorHandle])
+  @@index([publishedAt])
+  @@index([createdAt])
+}
+
+
+
