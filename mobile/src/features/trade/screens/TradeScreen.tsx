@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,11 @@ import { GlassPanel } from '@ui/primitives/GlassPanel';
 import { GlowingBorder } from '@ui/primitives/GlowingBorder';
 import { Button } from '@ui/primitives/Button';
 import { theme } from '@app/theme';
-import { useTradeStore } from '@app/store';
+import { useTradeStore, useWalletStore } from '@app/store';
 import { mockTradePairs, mockThemes, availableAssets, basketThemes, AvailableAsset } from '../models';
 import { TradingViewChart } from '../components/TradingViewChart';
 import { TradeService } from '../services/TradeService';
+import { runConnectionTests, getAPIConfig } from '../../wallet/services/testConnection';
 
 const QUICK_AMOUNTS = [10, 50, 100, 500];
 
@@ -50,6 +51,52 @@ export const TradeScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssetSelector, setShowAssetSelector] = useState<'long' | 'short' | null>(null);
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletInputAddress, setWalletInputAddress] = useState('');
+  const [walletError, setWalletError] = useState<string | null>(null);
+
+  // Wallet state
+  const { isConnected, walletAddress, isConnecting, connect, disconnect, initialize } = useWalletStore();
+
+  // Initialize wallet on mount
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  // Format wallet address for display
+  const formatAddress = (address: string | null): string => {
+    if (!address) return '';
+    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  };
+
+  // Handle wallet connection
+  const handleConnectWallet = async () => {
+    setWalletError(null);
+    try {
+      await connect(walletInputAddress);
+      setWalletInputAddress('');
+      setShowWalletModal(false);
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : 'Failed to connect wallet');
+    }
+  };
+
+  // Handle wallet disconnection
+  const handleDisconnectWallet = async () => {
+    try {
+      await disconnect();
+      setShowWalletModal(false);
+    } catch (error) {
+      console.error('Failed to disconnect:', error);
+    }
+  };
+
+  // DEBUG: Test API connection
+  const handleTestConnection = async () => {
+    console.log('🧪 TEST CONNECTION BUTTON PRESSED');
+    getAPIConfig();
+    await runConnectionTests();
+  };
 
   const handlePlaceTrade = async () => {
     if (!canPlaceTrade() || isSubmitting) return;
@@ -100,8 +147,8 @@ export const TradeScreen: React.FC = () => {
         };
       }
 
-      // Submit to Pear Execution API
-      const response = await TradeService.submitOrder(order);
+      // Submit to Pear Execution API with wallet address
+      const response = await TradeService.submitOrder(order as any, walletAddress || '');
 
       if (response.success) {
         setShowSuccess(true);
@@ -187,7 +234,7 @@ export const TradeScreen: React.FC = () => {
 
     // Handle authentication errors
     if (error.includes('401') || error.includes('Unauthorized') || error.includes('authentication')) {
-      return 'Authentication required. Please connect your wallet to continue.';
+      return 'Authentication required. Please try again.';
     }
 
     // Handle validation errors
@@ -268,20 +315,41 @@ export const TradeScreen: React.FC = () => {
         >
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>New Trade</Text>
-            <Text style={styles.subtitle}>
-              {tradeType === 'pair' 
-                ? 'Long one asset, short another'
-                : tradeType === 'basket'
-                ? 'Trade groups of tokens'
-                : 'Trade individual tokens'}
-            </Text>
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.title}>New Trade</Text>
+              <Text style={styles.subtitle}>
+                {tradeType === 'pair' 
+                  ? 'Long one asset, short another'
+                  : tradeType === 'basket'
+                  ? 'Trade groups of tokens'
+                  : 'Trade individual tokens'}
+              </Text>
+            </View>
+            {/* Wallet Connection Button */}
+            {isConnected ? (
+              <Pressable
+                style={styles.walletButton}
+                onPress={() => setShowWalletModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="View Wallet"
+              >
+                <Text style={styles.walletText}>
+                  {formatAddress(walletAddress)}
+                </Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.connectButton}
+                onPress={() => setShowWalletModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Connect Wallet"
+              >
+                <Ionicons name="wallet-outline" size={18} color="#FFF" />
+                <Text style={styles.connectText}>Connect</Text>
+              </Pressable>
+            )}
           </View>
-          <GlassPanel style={styles.balanceChip}>
-            <Text style={styles.balanceLabel}>Balance</Text>
-            <Text style={styles.balanceAmount}>$10,000</Text>
-          </GlassPanel>
         </View>
 
         {/* Trade Type Selector */}
@@ -391,7 +459,7 @@ export const TradeScreen: React.FC = () => {
                     onPress={() => setShowAssetSelector('long')}
                     style={[
                       styles.assetButton,
-                      selectedLongAsset && styles.assetButtonSelected,
+                      selectedLongAsset ? styles.assetButtonSelected : null,
                     ]}
                   >
                     <Text style={styles.assetButtonText}>
@@ -411,7 +479,7 @@ export const TradeScreen: React.FC = () => {
                     onPress={() => setShowAssetSelector('short')}
                     style={[
                       styles.assetButton,
-                      selectedShortAsset && styles.assetButtonSelected,
+                      selectedShortAsset ? styles.assetButtonSelected : null,
                     ]}
                   >
                     <Text style={styles.assetButtonText}>
@@ -575,7 +643,7 @@ export const TradeScreen: React.FC = () => {
                   </Text>
                   <Text
                     style={[
-                      styles.pairChange,
+                      styles.pairChipChange,
                       {
                         color:
                           pair.change24h >= 0 ? theme.colors.bullish : theme.colors.bearish,
@@ -844,6 +912,112 @@ export const TradeScreen: React.FC = () => {
           </Animated.View>
         </Pressable>
       </Modal>
+
+      {/* Wallet Modal */}
+      <Modal visible={showWalletModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              setShowWalletModal(false);
+              setWalletError(null);
+              setWalletInputAddress('');
+            }}
+          />
+          <Animated.View entering={FadeIn} exiting={FadeOut} style={{ zIndex: 1 }}>
+            <GlassPanel style={styles.walletModal}>
+              <View style={styles.walletModalHeader}>
+                <Text style={styles.walletModalTitle}>
+                  {isConnected ? 'Wallet Connected' : 'Connect Wallet'}
+                </Text>
+                <Pressable onPress={() => {
+                  setShowWalletModal(false);
+                  setWalletError(null);
+                  setWalletInputAddress('');
+                }}>
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
+                </Pressable>
+              </View>
+
+              {isConnected ? (
+                // Connected State
+                <View style={styles.walletModalContent}>
+                  <View style={styles.walletConnectedBadge}>
+                    <Ionicons name="checkmark-circle" size={48} color={theme.colors.success} />
+                  </View>
+                  <Text style={styles.walletConnectedLabel}>Connected Address</Text>
+                  <View style={styles.walletAddressBox}>
+                    <Text style={styles.walletAddressText}>{walletAddress}</Text>
+                  </View>
+                  <Text style={styles.walletHint}>
+                    Your wallet is connected and ready to trade
+                  </Text>
+                  <Button
+                    variant="error"
+                    onPress={handleDisconnectWallet}
+                    fullWidth
+                    size="lg"
+                  >
+                    Disconnect
+                  </Button>
+                </View>
+              ) : (
+                // Disconnected State
+                <View style={styles.walletModalContent}>
+                  <View style={styles.walletIconContainer}>
+                    <Ionicons name="wallet-outline" size={64} color="#FF6B35" />
+                  </View>
+                  <Text style={styles.walletDescription}>
+                    Enter your Ethereum wallet address to start trading
+                  </Text>
+                  <View style={styles.walletInputGroup}>
+                    <Text style={styles.walletInputLabel}>Wallet Address</Text>
+                    <TextInput
+                      style={styles.walletInput}
+                      value={walletInputAddress}
+                      onChangeText={(text) => {
+                        setWalletInputAddress(text);
+                        setWalletError(null);
+                      }}
+                      placeholder="0x..."
+                      placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!isConnecting}
+                    />
+                    <Text style={styles.walletInputHint}>
+                      Example: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+                    </Text>
+                  </View>
+                  {walletError && (
+                    <View style={styles.walletErrorBox}>
+                      <Ionicons name="alert-circle" size={20} color={theme.colors.error} />
+                      <Text style={styles.walletErrorText}>{walletError}</Text>
+                    </View>
+                  )}
+                  {isConnecting && (
+                    <View style={styles.walletLoadingBox}>
+                      <Text style={styles.walletLoadingText}>🔐 Authenticating with Pear Protocol...</Text>
+                      <Text style={styles.walletLoadingSubtext}>Please wait while we verify your wallet</Text>
+                    </View>
+                  )}
+                  <Button
+                    variant="primary"
+                    onPress={handleConnectWallet}
+                    fullWidth
+                    size="lg"
+                    disabled={!walletInputAddress || isConnecting}
+                    loading={isConnecting}
+                  >
+                    {isConnecting ? 'Authenticating...' : 'Connect Wallet'}
+                  </Button>
+                </View>
+              )}
+            </GlassPanel>
+          </Animated.View>
+        </View>
+      </Modal>
+
     </View>
   );
 };
@@ -864,10 +1038,46 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   header: {
+    marginBottom: theme.spacing.lg,
+  },
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: theme.spacing.lg,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  walletButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.5)',
+  },
+  walletText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4CAF50',
+  },
+  connectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  connectText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   title: {
     fontSize: theme.typography.sizes.xxxl,
@@ -1168,7 +1378,7 @@ const styles = StyleSheet.create({
   pairChipTextActive: {
     color: '#FF6B35',
   },
-  pairChange: {
+  pairChipChange: {
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
   },
@@ -1395,5 +1605,115 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
     lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.md,
     marginBottom: theme.spacing.lg,
+  },
+  walletModal: {
+    minWidth: 300,
+    maxWidth: '90%',
+    padding: theme.spacing.xl,
+  },
+  walletModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xl,
+  },
+  walletModalTitle: {
+    fontSize: theme.typography.sizes.xxl,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+  },
+  walletModalContent: {
+    gap: theme.spacing.lg,
+  },
+  walletConnectedBadge: {
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  walletConnectedLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  walletAddressBox: {
+    padding: theme.spacing.md,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  walletAddressText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#4CAF50',
+    textAlign: 'center',
+  },
+  walletIconContainer: {
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  walletDescription: {
+    fontSize: theme.typography.sizes.md,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.md,
+  },
+  walletInputGroup: {
+    gap: theme.spacing.sm,
+  },
+  walletInputLabel: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    color: '#FFFFFF',
+  },
+  walletInput: {
+    padding: theme.spacing.md,
+    fontSize: theme.typography.sizes.md,
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  walletInputHint: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  walletErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    borderRadius: theme.borderRadius.md,
+  },
+  walletErrorText: {
+    flex: 1,
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.error,
+  },
+  walletLoadingBox: {
+    padding: theme.spacing.md,
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
+  },
+  walletLoadingText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FF6B35',
+    textAlign: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  walletLoadingSubtext: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+  },
+  walletHint: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textAlign: 'center',
   },
 });

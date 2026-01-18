@@ -1,7 +1,18 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Trade Store
 import { TradePair, TradeTheme } from '../../features/trade/models';
+
+// API Base URL
+const getApiBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
+  // For mobile devices, use LAN IP
+  return 'http://10.0.11.138:8000';
+};
 
 interface TradeState {
   selectedTheme: TradeTheme | null;
@@ -139,4 +150,168 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     })),
   setScreenshot: (uri) => set({ screenshotUri: uri }),
   clearChat: () => set({ messages: [], screenshotUri: null }),
+}));
+
+// Wallet Store
+const WALLET_ADDRESS_KEY = '@wallet_address';
+const ACCESS_TOKEN_KEY = '@access_token';
+
+interface WalletState {
+  walletAddress: string | null;
+  accessToken: string | null;
+  isConnected: boolean;
+  isConnecting: boolean;
+  connect: (address: string) => Promise<void>;
+  disconnect: () => Promise<void>;
+  initialize: () => Promise<void>;
+  getAccessToken: () => string | null;
+}
+
+const isValidEthAddress = (address: string): boolean => {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+};
+
+export const useWalletStore = create<WalletState>((set, get) => ({
+  walletAddress: null,
+  accessToken: null,
+  isConnected: false,
+  isConnecting: false,
+  
+  connect: async (address: string) => {
+    // Validate address format
+    const trimmedAddress = address.trim();
+    if (!isValidEthAddress(trimmedAddress)) {
+      throw new Error('Invalid wallet address format. Please enter a valid Ethereum address (0x...)');
+    }
+    
+    // Set connecting state
+    set({ isConnecting: true });
+    
+    console.log('\n' + '='.repeat(80));
+    console.log('🔐 WALLET AUTHENTICATION STARTED');
+    console.log('='.repeat(80));
+    console.log('📍 Address:', trimmedAddress);
+    console.log('🌐 Platform:', Platform.OS);
+    
+    try {
+      // Call the complete authentication endpoint
+      const apiUrl = getApiBaseUrl();
+      const authUrl = `${apiUrl}/api/trade/pear/auth/authenticate-wallet?address=${trimmedAddress}`;
+      
+      console.log('📡 Calling complete authentication endpoint...');
+      console.log('🔗 Full URL:', authUrl);
+      console.log('⏳ Authenticating with Pear Protocol...');
+      
+      const response = await fetch(authUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('📊 Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Authentication request failed!');
+        console.error('❌ Error response:', errorText);
+        set({ isConnecting: false });
+        throw new Error(`Authentication failed: ${response.status} - ${errorText}`);
+      }
+      
+      const authResult = await response.json();
+      console.log('\n' + '='.repeat(80));
+      console.log('✅ AUTHENTICATION RESPONSE');
+      console.log('='.repeat(80));
+      console.log(JSON.stringify(authResult, null, 2));
+      console.log('='.repeat(80) + '\n');
+      
+      // Only connect if authentication was successful
+      if (authResult.success && authResult.authenticated) {
+        const accessToken = authResult.accessToken || null;
+        
+        // Store wallet address and access token
+        await AsyncStorage.setItem(WALLET_ADDRESS_KEY, trimmedAddress);
+        if (accessToken) {
+          await AsyncStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+          console.log('✅ Access token stored:', accessToken.substring(0, 20) + '...');
+        }
+        
+        // Update state
+        set({ 
+          walletAddress: trimmedAddress,
+          accessToken: accessToken,
+          isConnected: true,
+          isConnecting: false
+        });
+        
+        console.log('✅ Wallet authenticated and connected:', trimmedAddress);
+        console.log('='.repeat(80) + '\n');
+      } else {
+        // Authentication failed
+        set({ isConnecting: false });
+        const errorMsg = authResult.error || authResult.message || 'Authentication failed';
+        console.error('❌ Authentication failed:', errorMsg);
+        console.log('='.repeat(80) + '\n');
+        throw new Error(errorMsg);
+      }
+    } catch (error) {
+      set({ isConnecting: false });
+      console.error('❌ Failed to authenticate wallet:', error);
+      console.log('='.repeat(80) + '\n');
+      
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to authenticate wallet');
+    }
+  },
+  
+  disconnect: async () => {
+    try {
+      // Clear from AsyncStorage
+      await AsyncStorage.removeItem(WALLET_ADDRESS_KEY);
+      await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
+      
+      // Reset state
+      set({ 
+        walletAddress: null,
+        accessToken: null,
+        isConnected: false 
+      });
+      
+      console.log('✅ Wallet disconnected');
+    } catch (error) {
+      console.error('Failed to disconnect wallet:', error);
+      throw new Error('Failed to disconnect wallet');
+    }
+  },
+  
+  initialize: async () => {
+    try {
+      // Load from AsyncStorage on app start
+      const savedAddress = await AsyncStorage.getItem(WALLET_ADDRESS_KEY);
+      const savedToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+      
+      if (savedAddress && isValidEthAddress(savedAddress)) {
+        set({ 
+          walletAddress: savedAddress,
+          accessToken: savedToken,
+          isConnected: true 
+        });
+        console.log('✅ Wallet restored from storage:', savedAddress);
+        if (savedToken) {
+          console.log('✅ Access token restored:', savedToken.substring(0, 20) + '...');
+        }
+      } else {
+        console.log('ℹ️ No saved wallet found');
+      }
+    } catch (error) {
+      console.error('Failed to initialize wallet:', error);
+    }
+  },
+  
+  getAccessToken: () => {
+    return get().accessToken;
+  },
 }));

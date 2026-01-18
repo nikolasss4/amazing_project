@@ -12,7 +12,22 @@
  * - Pair/basket trades: POST /positions
  */
 
+import { Platform } from 'react-native';
 import { TradeOrder, TradeTheme, TradePair } from '../models';
+import { useWalletStore } from '../../../app/store';
+
+// Dynamic API Base URL - matches WalletService configuration
+// For iOS Simulator: use 'localhost'
+// For Android Emulator: use '10.0.2.2'
+// For physical device: use your machine's LAN IP (e.g., '10.0.11.138')
+// For web: use 'localhost'
+const getApiBaseUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000/api/trade/pear';
+  }
+  // For mobile devices, use LAN IP
+  return 'http://10.0.11.138:8000/api/trade/pear';
+};
 
 /**
  * Request format for single spot orders
@@ -84,29 +99,18 @@ export interface PearTradeResponse {
 class TradeServiceClass {
   /**
    * Base URL for Pear Execution API
-   * Mainnet: hl-v2.pearprotocol.io (production environment)
+   * Dynamically determined based on platform (web/mobile)
    */
-  private apiBaseUrl = 'https://hl-v2.pearprotocol.io';
+  private apiBaseUrl = getApiBaseUrl();
   private clientId = 'HLHackathon1'; // Default, can be rotated
 
   /**
-   * Access token getter function
-   * Set via setAccessTokenGetter() when authentication is implemented
-   */
-  private accessTokenGetter: (() => Promise<string>) | null = null;
-
-  /**
    * Get access token for API authentication
-   * TODO: Implement when Step 2 (Authentication) is completed
-   * For now, returns empty string - will need to be replaced with actual token
+   * Uses wallet store to get the stored access token
    */
   private async getAccessToken(): Promise<string> {
-    if (this.accessTokenGetter) {
-      return await this.accessTokenGetter();
-    }
-    // TODO: Replace with actual AuthService.getAccessToken() when authentication is implemented
-    // For now, return empty string - API calls will fail with 401 until auth is implemented
-    return '';
+    const token = useWalletStore.getState().getAccessToken();
+    return token || '';
   }
 
   /**
@@ -115,26 +119,40 @@ class TradeServiceClass {
    * - Single token trades -> /orders/spot
    * - Pair/basket trades -> /positions
    */
-  async submitOrder(order: TradeOrder): Promise<PearTradeResponse> {
+  async submitOrder(order: TradeOrder, walletAddress: string): Promise<PearTradeResponse> {
+    console.log('\n' + '='.repeat(80));
+    console.log('🚀 SUBMITTING TRADE ORDER');
+    console.log('='.repeat(80));
+    console.log('🌐 Platform:', Platform.OS);
+    console.log('📦 Order Type:', order.type);
+    console.log('💰 Amount:', order.amount);
+    console.log('📍 Side:', order.side);
+    console.log('👛 Wallet:', walletAddress);
+    console.log('📡 API Base URL:', this.apiBaseUrl);
+    
     try {
-      // Get access token (will be empty until auth is implemented)
+      // Get access token
+      console.log('🔑 Getting access token...');
       const accessToken = await this.getAccessToken();
+      console.log('🔑 Access token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
 
       // Route to appropriate endpoint based on order type
       if (order.type === 'single' && order.pair) {
-        // Single spot order
-        return await this.submitSpotOrder(order, accessToken);
+        console.log('➡️  Routing to SINGLE spot order endpoint');
+        return await this.submitSpotOrder(order, accessToken, walletAddress);
       } else if (order.type === 'pair' || order.type === 'theme') {
-        // Pair or basket trade (position)
-        return await this.submitPosition(order, accessToken);
+        console.log('➡️  Routing to PAIR/BASKET position endpoint');
+        return await this.submitPosition(order, accessToken, walletAddress);
       } else {
+        console.error('❌ Invalid order type!');
         return {
           success: false,
           error: 'Invalid order type. Must be single token or pair trade.',
         };
       }
     } catch (error) {
-      console.error('TradeService error:', error);
+      console.error('❌ TradeService error:', error);
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -148,18 +166,27 @@ class TradeServiceClass {
    */
   private async submitSpotOrder(
     order: TradeOrder,
-    accessToken: string
+    accessToken: string,
+    walletAddress: string
   ): Promise<PearTradeResponse> {
+    const url = `${this.apiBaseUrl}/orders/spot`;
+    
     try {
       // Convert to Pear API format
       const asset = order.pair!.symbol.replace('USD', '').replace('/', '');
-      const requestBody: PearSpotOrderRequest = {
+      const requestBody: any = {
         asset,
         isBuy: order.side === 'long',
         amount: order.amount,
+        walletAddress, // Include wallet address
       };
 
-      const response = await fetch(`${this.apiBaseUrl}/orders/spot`, {
+      console.log('\n📦 SPOT ORDER REQUEST');
+      console.log('📡 URL:', url);
+      console.log('📦 Body:', JSON.stringify(requestBody, null, 2));
+      console.log('⏳ Making POST request...');
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -168,9 +195,11 @@ class TradeServiceClass {
         body: JSON.stringify(requestBody),
       });
 
+      console.log('📊 Response Status:', response.status);
       return await this.handleApiResponse(response);
     } catch (error) {
-      console.error('Spot order error:', error);
+      console.error('❌ Spot order error:', error);
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to execute spot order',
@@ -184,13 +213,24 @@ class TradeServiceClass {
    */
   private async submitPosition(
     order: TradeOrder,
-    accessToken: string
+    accessToken: string,
+    walletAddress: string
   ): Promise<PearTradeResponse> {
+    const url = `${this.apiBaseUrl}/positions`;
+    
     try {
       // Convert to Pear API format
-      const requestBody = this.convertToPositionRequest(order);
+      const requestBody = {
+        ...this.convertToPositionRequest(order),
+        walletAddress, // Include wallet address
+      };
 
-      const response = await fetch(`${this.apiBaseUrl}/positions`, {
+      console.log('\n📦 POSITION ORDER REQUEST');
+      console.log('📡 URL:', url);
+      console.log('📦 Body:', JSON.stringify(requestBody, null, 2));
+      console.log('⏳ Making POST request...');
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -199,9 +239,11 @@ class TradeServiceClass {
         body: JSON.stringify(requestBody),
       });
 
+      console.log('📊 Response Status:', response.status);
       return await this.handleApiResponse(response);
     } catch (error) {
-      console.error('Position trade error:', error);
+      console.error('❌ Position trade error:', error);
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to execute position trade',
@@ -290,19 +332,34 @@ class TradeServiceClass {
     const contentType = response.headers.get('content-type');
     const isJson = contentType?.includes('application/json');
 
+    console.log('📋 Content-Type:', contentType);
+    console.log('📋 Is JSON:', isJson);
+
     if (!response.ok) {
+      console.error('❌ Response NOT OK!');
+      console.error('📊 Status:', response.status, response.statusText);
+      
       // Handle error response
       let errorMessage = `API error: ${response.status} ${response.statusText}`;
 
       if (isJson) {
         try {
           const errorData = (await response.json()) as PearErrorResponse;
+          console.error('📦 Error Data:', errorData);
           errorMessage = errorData.error?.message || errorMessage;
         } catch (e) {
-          // Failed to parse error JSON, use default message
+          console.error('Failed to parse error JSON:', e);
+        }
+      } else {
+        try {
+          const text = await response.text();
+          console.error('📦 Error Text:', text);
+        } catch (e) {
+          console.error('Failed to read error text:', e);
         }
       }
 
+      console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: errorMessage,
@@ -310,9 +367,13 @@ class TradeServiceClass {
     }
 
     // Handle success response
+    console.log('✅ Response OK!');
+    
     if (isJson) {
       try {
         const data = (await response.json()) as PearSuccessResponse;
+        console.log('📦 Success Data:', data);
+        console.log('='.repeat(80) + '\n');
         return {
           success: true,
           orderId: data.orderId,
@@ -320,6 +381,8 @@ class TradeServiceClass {
           message: data.message || 'Order executed successfully',
         };
       } catch (e) {
+        console.error('❌ Failed to parse success JSON:', e);
+        console.log('='.repeat(80) + '\n');
         return {
           success: false,
           error: 'Failed to parse API response',
@@ -328,6 +391,8 @@ class TradeServiceClass {
     }
 
     // Non-JSON success response
+    console.log('✅ Non-JSON success response');
+    console.log('='.repeat(80) + '\n');
     return {
       success: true,
       message: 'Order executed successfully',
@@ -339,14 +404,6 @@ class TradeServiceClass {
    */
   setClientId(clientId: string): void {
     this.clientId = clientId;
-  }
-
-  /**
-   * Set access token getter function
-   * Call this when authentication is implemented to provide token retrieval
-   */
-  setAccessTokenGetter(getter: () => Promise<string>): void {
-    this.getAccessToken = getter;
   }
 
   /**
