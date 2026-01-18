@@ -27,7 +27,6 @@ import { CandlestickChart } from '../components/CandlestickChart';
 import { ScenarioCardSkeleton } from '../components/ScenarioCardSkeleton';
 import { EmptyState } from '../components/EmptyState';
 import { HapticPatterns } from '../utils/haptics';
-import { Avatar } from '../../community/components/Avatar';
 
 // Calculate streak display value: multiply (double) until 30, then add 10
 const calculateStreakValue = (streak: number): number => {
