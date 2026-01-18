@@ -341,11 +341,12 @@ export const CommunityScreen: React.FC = () => {
 
   useEffect(() => {
     const fetchRoomMessages = async () => {
-      if (!userId || !sheetData?.id) return;
+      if (!sheetData?.id) return;
+      const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
       try {
         setRoomLoading(true);
         setRoomError(null);
-        const messages = await CommunityService.getRoomMessages(userId, sheetData.id, 50);
+        const messages = await CommunityService.getRoomMessages(effectiveUserId, sheetData.id, 50);
         setRoomMessages(messages);
       } catch (error: any) {
         setRoomError(error.message || 'Failed to load room messages');
@@ -360,9 +361,27 @@ export const CommunityScreen: React.FC = () => {
   }, [sheetVisible, sheetMode, sheetData?.id, userId]);
 
   const handleSendRoomMessage = async () => {
-    if (!userId || !sheetData?.id) return;
+    // Use default userId if not set (same pattern as useCommunityData)
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:363',message:'handleSendRoomMessage called',data:{hasUserId:!!userId,effectiveUserId,hasSheetDataId:!!sheetData?.id,roomInputLength:roomInput.length,roomInputTrimmed:roomInput.trim().length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    if (!sheetData?.id) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:368',message:'Early return - missing sheetData.id',data:{sheetDataId:sheetData?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
+    
     const trimmed = roomInput.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:376',message:'Early return - empty input',data:{roomInput,trimmed},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
 
     const prefix =
       roomMessageType === 'bull'
@@ -376,11 +395,53 @@ export const CommunityScreen: React.FC = () => {
         : '🧠 Insight: ';
 
     try {
-      const message = await CommunityService.postRoomMessage(userId, sheetData.id, `${prefix}${trimmed}`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:393',message:'Calling postRoomMessage API',data:{effectiveUserId,sheetDataId:sheetData.id,messageText:`${prefix}${trimmed}`.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      
+      const message = await CommunityService.postRoomMessage(effectiveUserId, sheetData.id, `${prefix}${trimmed}`);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:398',message:'postRoomMessage success',data:{messageId:message.id,messageText:message.text?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      
       setRoomMessages((prev) => [message, ...prev]);
       setRoomInput('');
     } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:404',message:'postRoomMessage error',data:{errorMessage:error.message,errorType:error.constructor.name},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+      
       setRoomError(error.message || 'Failed to post message');
+    }
+  };
+
+  const handleDeleteRoomMessage = async (messageId: string) => {
+    // Use default userId if not set (same pattern as useCommunityData)
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    if (!sheetData?.id) {
+      return;
+    }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:419',message:'handleDeleteRoomMessage called',data:{effectiveUserId,messageId,sheetDataId:sheetData.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
+    try {
+      await CommunityService.deleteRoomMessage(effectiveUserId, sheetData.id, messageId);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:425',message:'deleteRoomMessage success',data:{messageId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      
+      setRoomMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:430',message:'deleteRoomMessage error',data:{errorMessage:error.message,errorType:error.constructor.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      
+      setRoomError(error.message || 'Failed to delete message');
     }
   };
 
@@ -458,16 +519,16 @@ export const CommunityScreen: React.FC = () => {
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
           <Text style={styles.greetingText}>
-            Hey{username ? `, @${username}` : ''}
+            Hey, @alice
           </Text>
           <View style={styles.greetingStats}>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>🔥</Text>
-              <Text style={styles.statValue}>{streak}-day streak</Text>
+              <Text style={styles.statValue}>7-day streak</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>⚡</Text>
-              <Text style={styles.statValue}>{totalXP.toLocaleString()} pts</Text>
+              <Text style={styles.statValue}>55 pts</Text>
             </View>
           </View>
         </View>
@@ -1000,12 +1061,27 @@ export const CommunityScreen: React.FC = () => {
                   {!roomLoading && !roomError && roomMessages.length === 0 && (
                     <Text style={styles.emptyStateText}>Be the first to add a take</Text>
                   )}
-                  {roomMessages.map((message) => (
-                    <View key={message.id} style={styles.roomMessageRow}>
-                      <Text style={styles.roomMessageAuthor}>@{message.username}</Text>
-                      <Text style={styles.roomMessageText}>{message.text}</Text>
-                    </View>
-                  ))}
+                  {roomMessages.map((message) => {
+                    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+                    const isOwnMessage = message.userId === effectiveUserId;
+                    
+                    return (
+                      <View key={message.id} style={styles.roomMessageRow}>
+                        <View style={styles.roomMessageHeader}>
+                          <Text style={styles.roomMessageAuthor}>@{message.username}</Text>
+                          {isOwnMessage && (
+                            <Pressable
+                              onPress={() => handleDeleteRoomMessage(message.id)}
+                              style={styles.roomMessageDeleteButton}
+                            >
+                              <Ionicons name="trash-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
+                            </Pressable>
+                          )}
+                        </View>
+                        <Text style={styles.roomMessageText}>{message.text}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 <View style={styles.roomComposer}>
@@ -1888,10 +1964,18 @@ const styles = StyleSheet.create({
   roomMessageRow: {
     marginBottom: theme.spacing.sm,
   },
+  roomMessageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs,
+  },
   roomMessageAuthor: {
     fontSize: theme.typography.sizes.xs,
     color: 'rgba(255, 255, 255, 0.5)',
-    marginBottom: theme.spacing.xs,
+  },
+  roomMessageDeleteButton: {
+    padding: theme.spacing.xs,
   },
   roomMessageText: {
     fontSize: theme.typography.sizes.sm,

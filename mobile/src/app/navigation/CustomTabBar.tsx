@@ -109,7 +109,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
   const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
     Trade: 'trending-up',
     Community: 'people',
-    Improve: 'school',
+    Learn: 'school',
   };
 
   const handleTabPress = (route: any, index: number) => {
@@ -162,6 +162,10 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
           {state.routes.map((route, index) => {
             const isFocused = state.index === index;
             const iconName = iconMap[route.name] || 'ellipse';
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CustomTabBar.tsx:164',message:'Rendering tab route',data:{routeName:route.name,hasIcon:!!iconMap[route.name],iconName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
 
             return (
               <TabButton
