@@ -14,6 +14,7 @@ import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 import * as communityService from '../services/community-api.service';
 import * as followerRepo from '../repositories/narrative-follower.repository';
 import * as marketRoomRepo from '../repositories/market-room.repository';
+import * as stanceRepo from '../repositories/narrative-stance.repository';
 import { prisma } from '../config/database';
 
 const router = Router();
@@ -220,6 +221,81 @@ router.delete('/rooms/:narrativeId/messages/:messageId', async (req: Authenticat
       return res.status(403).json({ error: error.message });
     }
     res.status(500).json({ error: 'Failed to delete message', details: error.message });
+  }
+});
+
+/**
+ * POST /api/rooms/:narrativeId/stance
+ * Cast or update a stance vote
+ */
+router.post('/rooms/:narrativeId/stance', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const paramsSchema = z.object({
+      narrativeId: z.string().uuid(),
+    });
+    const bodySchema = z.object({
+      stance: z.enum(['bullish', 'bearish', 'neutral']),
+    });
+
+    const { narrativeId } = paramsSchema.parse(req.params);
+    const { stance } = bodySchema.parse(req.body);
+    const userId = req.userId!;
+
+    const narrativeExists = await prisma.detectedNarrative.findUnique({
+      where: { id: narrativeId },
+      select: { id: true },
+    });
+
+    if (!narrativeExists) {
+      return res.status(404).json({ error: 'Narrative not found' });
+    }
+
+    const result = await stanceRepo.upsertNarrativeStance(narrativeId, userId, stance);
+    res.json(result);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid request', details: error.errors });
+    }
+    res.status(500).json({ error: 'Failed to cast stance', details: error.message });
+  }
+});
+
+/**
+ * GET /api/rooms/:narrativeId/stance
+ * Get user's stance and overall stance counts
+ */
+router.get('/rooms/:narrativeId/stance', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const paramsSchema = z.object({
+      narrativeId: z.string().uuid(),
+    });
+
+    const { narrativeId } = paramsSchema.parse(req.params);
+    const userId = req.userId!;
+
+    const narrativeExists = await prisma.detectedNarrative.findUnique({
+      where: { id: narrativeId },
+      select: { id: true },
+    });
+
+    if (!narrativeExists) {
+      return res.status(404).json({ error: 'Narrative not found' });
+    }
+
+    const [userStance, counts] = await Promise.all([
+      stanceRepo.getNarrativeStance(narrativeId, userId),
+      stanceRepo.getNarrativeStanceCounts(narrativeId),
+    ]);
+
+    res.json({
+      userStance: userStance?.stance || null,
+      counts,
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid parameters', details: error.errors });
+    }
+    res.status(500).json({ error: 'Failed to get stance', details: error.message });
   }
 });
 

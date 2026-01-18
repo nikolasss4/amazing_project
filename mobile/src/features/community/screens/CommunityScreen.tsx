@@ -17,7 +17,7 @@ import { useLearnStore, useUserStore } from '@app/store';
 import { LeaderboardEntry } from '../models';
 import { QRCodeModal } from '../components/QRCodeModal';
 import { QRScannerModal } from '../components/QRScannerModal';
-import { CommunityService, MarketMessage } from '../services/CommunityService';
+import { CommunityService, MarketMessage, StanceType, StanceData } from '../services/CommunityService';
 import { CommunityNarrative, useNarratives } from '../hooks/useCommunityData';
 import { ErrorBoundary } from '@ui/components/ErrorBoundary';
 import { Avatar } from '../components/Avatar';
@@ -86,29 +86,6 @@ const CommunityScreenContent: React.FC = () => {
   const ToastAndroid = Platform.OS === 'android' ? require('react-native').ToastAndroid : null;
   const { streak, totalXP } = useLearnStore();
   const { userId, username, setUser } = useUserStore();
-  
-  // Error state to catch any rendering errors
-  const [componentError, setComponentError] = useState<Error | null>(null);
-
-  // Catch errors in useEffect
-  useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const errorHandler = (error: ErrorEvent) => {
-        console.error('CommunityScreen error:', error);
-        setComponentError(new Error(error.message || 'Unknown error'));
-      };
-      const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
-        console.error('CommunityScreen unhandled rejection:', event);
-        setComponentError(new Error(event.reason?.message || 'Unhandled promise rejection'));
-      };
-      window.addEventListener('error', errorHandler);
-      window.addEventListener('unhandledrejection', unhandledRejectionHandler);
-      return () => {
-        window.removeEventListener('error', errorHandler);
-        window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
-      };
-    }
-  }, []);
 
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
   const [isFlipped, setIsFlipped] = useState(false);
@@ -126,6 +103,8 @@ const CommunityScreenContent: React.FC = () => {
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomInput, setRoomInput] = useState('');
   const [roomMessageType, setRoomMessageType] = useState<'bull' | 'bear' | 'question' | 'insight' | 'source'>('insight');
+  const [stanceData, setStanceData] = useState<StanceData | null>(null);
+  const [stanceLoading, setStanceLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const flipRotation = useSharedValue(0);
@@ -148,31 +127,20 @@ const CommunityScreenContent: React.FC = () => {
   }, [leaderboardPeriod]);
 
   useEffect(() => {
-    try {
-      // Always set narratives data - no userId check needed
-      // Ensure narrativesData is always an array to prevent "array is not iterable" errors
-      const safeNarrativesData = Array.isArray(narrativesData) ? narrativesData : [];
-      setLocalNarratives(safeNarrativesData);
-      if (!narrativesLoading && safeNarrativesData.length > 0) {
-        const latestUpdated = safeNarrativesData.reduce<Date | null>((latest, narrative) => {
-          try {
-            if (!narrative || !narrative.updated_at) return latest;
-            const updatedAt = new Date(narrative.updated_at);
-            if (isNaN(updatedAt.getTime())) return latest;
-            if (!latest || updatedAt > latest) {
-              return updatedAt;
-            }
-          } catch (e) {
-            console.warn('Error parsing narrative date:', e);
-          }
-          return latest;
-        }, null);
-        setLastNarrativesUpdatedAt(latestUpdated ?? new Date());
-      }
-    } catch (error) {
-      console.error('Error in narrativesData useEffect:', error);
-      setLocalNarratives([]);
-      setComponentError(error instanceof Error ? error : new Error('Failed to process narratives data'));
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityScreen.tsx:89',message:'narrativesData updated',data:{narrativesCount:narrativesData.length,loading:narrativesLoading,firstNarrativeTitle:narrativesData[0]?.title,firstReason:narrativesData[0]?.insights?.reason?.substring(0,60),hasGenericText:(narrativesData[0]?.insights?.reason||'').includes('Narrative formed from recent')},timestamp:Date.now(),sessionId:'debug-session',runId:'check-data-flow',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    // Always set narratives data - no userId check needed
+    setLocalNarratives(narrativesData);
+    if (!narrativesLoading) {
+      const latestUpdated = narrativesData.reduce<Date | null>((latest, narrative) => {
+        const updatedAt = new Date(narrative.updated_at);
+        if (!latest || updatedAt > latest) {
+          return updatedAt;
+        }
+        return latest;
+      }, null);
+      setLastNarrativesUpdatedAt(latestUpdated ?? new Date());
     }
   }, [narrativesData, narrativesLoading]);
 
@@ -297,31 +265,18 @@ const CommunityScreenContent: React.FC = () => {
   };
 
   const getVelocitySnapshot = (narrative: CommunityNarrative) => {
-    try {
-      if (!narrative?.insights?.change) {
-        return { direction: '—', percent: 0 };
-      }
-      const { current = 0, previous = 0 } = narrative.insights.change;
-      const delta = current - previous;
-      const percent =
-        previous === 0 ? (current > 0 ? 100 : 0) : Math.round((delta / previous) * 100);
-      return {
-        direction: percent >= 0 ? '↑' : '↓',
-        percent: Math.abs(percent),
-      };
-    } catch (e) {
-      console.warn('Error calculating velocity snapshot:', e);
-      return { direction: '—', percent: 0 };
-    }
+    const { current, previous } = narrative.insights.change;
+    const delta = current - previous;
+    const percent =
+      previous === 0 ? (current > 0 ? 100 : 0) : Math.round((delta / previous) * 100);
+    return {
+      direction: percent >= 0 ? '↑' : '↓',
+      percent: Math.abs(percent),
+    };
   };
 
   const getConfidenceLabel = (level: CommunityNarrative['insights']['confidence']['level']) => {
-    try {
-      if (!level || typeof level !== 'string') return 'Unknown';
-      return `${level[0].toUpperCase()}${level.slice(1)}`;
-    } catch (e) {
-      return 'Unknown';
-    }
+    return `${level[0].toUpperCase()}${level.slice(1)}`;
   };
 
   const getWhyLine = (text: string) => {
@@ -331,10 +286,7 @@ const CommunityScreenContent: React.FC = () => {
   };
 
   const updateNarrative = (narrativeId: string, updater: (narrative: CommunityNarrative) => CommunityNarrative) => {
-    setLocalNarratives((prev) => {
-      if (!Array.isArray(prev)) return [];
-      return prev.map((item) => (item?.id === narrativeId ? updater(item) : item));
-    });
+    setLocalNarratives((prev) => prev.map((item) => (item.id === narrativeId ? updater(item) : item)));
   };
 
   const handleFollowNarrative = async (narrativeId: string) => {
@@ -374,52 +326,27 @@ const CommunityScreenContent: React.FC = () => {
   };
 
   const cryptoNarratives = useMemo(() => {
-    try {
-      if (!Array.isArray(localNarratives)) return [];
-      return localNarratives.filter(
-        (narrative) =>
-          narrative &&
-          narrative.category === 'crypto' &&
-          Array.isArray(narrative.assets) &&
-          narrative.assets.some(isCryptoAsset)
-      );
-    } catch (error) {
-      console.error('Error in cryptoNarratives useMemo:', error);
-      return [];
-    }
+    return localNarratives.filter(
+      (narrative) =>
+        narrative.category === 'crypto' &&
+        narrative.assets.some(isCryptoAsset)
+    );
   }, [localNarratives]);
 
   const visibleNarratives = useMemo(() => {
-    try {
-      if (!Array.isArray(cryptoNarratives)) return [];
-      return cryptoNarratives.filter((narrative) => 
-        narrative && narrative.id && !fadedNarratives.has(narrative.id)
-      );
-    } catch (error) {
-      console.error('Error in visibleNarratives useMemo:', error);
-      return [];
-    }
+    return cryptoNarratives.filter((narrative) => !fadedNarratives.has(narrative.id));
   }, [cryptoNarratives, fadedNarratives]);
 
   const marketRooms = useMemo(() => {
-    try {
-      if (!Array.isArray(visibleNarratives)) return [];
-      return visibleNarratives.slice(0, 4).map((room) => {
-        if (!room || !room.id) return null;
-        return {
-          id: room.id,
-          title: room.title || 'Untitled',
-          active: room.insights?.change?.current || 0,
-          latest: (Array.isArray(room.insights?.headlines) && room.insights.headlines[0]?.title) || room.insights?.reason || '',
-          headlines: Array.isArray(room.insights?.headlines) ? room.insights.headlines : [],
-          sources: Array.isArray(room.insights?.sources) ? room.insights.sources : [],
-          narrative: room,
-        };
-      }).filter(Boolean) as any[];
-    } catch (e) {
-      console.error('Error creating market rooms:', e);
-      return [];
-    }
+    return visibleNarratives.slice(0, 4).map((room) => ({
+      id: room.id,
+      title: room.title,
+      active: room.insights.change.current,
+      latest: room.insights.headlines[0]?.title || room.insights.reason,
+      headlines: room.insights.headlines,
+      sources: room.insights.sources,
+      narrative: room,
+    }));
   }, [visibleNarratives]);
 
   const openRoomSheet = (room: any) => {
@@ -443,9 +370,24 @@ const CommunityScreenContent: React.FC = () => {
         setRoomLoading(false);
       }
     };
+    const fetchStanceData = async () => {
+      if (!sheetData?.id) return;
+      const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+      try {
+        setStanceLoading(true);
+        const data = await CommunityService.getStance(effectiveUserId, sheetData.id);
+        setStanceData(data);
+      } catch (error: any) {
+        // Silently fail - stance is optional
+        setStanceData({ userStance: null, counts: { bullish: 0, bearish: 0, neutral: 0 } });
+      } finally {
+        setStanceLoading(false);
+      }
+    };
 
-    if (sheetVisible && sheetMode === 'room') {
+    if (sheetVisible && sheetMode === 'room' && sheetData?.id) {
       fetchRoomMessages();
+      fetchStanceData();
     }
   }, [sheetVisible, sheetMode, sheetData?.id, userId]);
 
@@ -505,6 +447,23 @@ const CommunityScreenContent: React.FC = () => {
     }
   };
 
+  const handleCastStance = async (stance: StanceType) => {
+    if (!sheetData?.id) return;
+    
+    const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
+    
+    try {
+      await CommunityService.castStance(effectiveUserId, sheetData.id, stance);
+      // Refetch stance data to update counts
+      const data = await CommunityService.getStance(effectiveUserId, sheetData.id);
+      setStanceData(data);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error: any) {
+      setRoomError(error.message || 'Failed to cast stance');
+      showToast(error.message || 'Failed to cast stance');
+    }
+  };
+
   const handleDeleteRoomMessage = async (messageId: string) => {
     // Use default userId if not set (same pattern as useCommunityData)
     const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
@@ -535,31 +494,6 @@ const CommunityScreenContent: React.FC = () => {
   };
 
   const sheetVelocity = sheetMode === 'crypto' && sheetData ? getVelocitySnapshot(sheetData) : null;
-
-  // Error boundary - show error message if component crashes
-  if (componentError) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: theme.spacing.xl }]}>
-        <Text style={styles.errorText}>Error loading community page</Text>
-        <Text style={[styles.errorText, { fontSize: theme.typography.sizes.sm, marginTop: theme.spacing.md }]}>
-          {componentError.message}
-        </Text>
-        {Platform.OS === 'web' && (
-          <Pressable
-            onPress={() => {
-              setComponentError(null);
-              if (typeof window !== 'undefined') {
-                window.location.reload();
-              }
-            }}
-            style={{ marginTop: theme.spacing.lg, padding: theme.spacing.md, backgroundColor: theme.colors.accent, borderRadius: theme.borderRadius.md }}
-          >
-            <Text style={{ color: '#FFFFFF' }}>Reload Page</Text>
-          </Pressable>
-        )}
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -907,7 +841,7 @@ const CommunityScreenContent: React.FC = () => {
                 </Text>
               </View>
             )}
-            {!narrativesLoading && !narrativesError && (!Array.isArray(cryptoNarratives) || cryptoNarratives.length === 0) && (
+            {!narrativesLoading && !narrativesError && cryptoNarratives.length === 0 && (
               <View style={styles.emptyStateBlock}>
                 <Text style={styles.emptyStateText}>No active crypto narratives right now</Text>
                 <Text style={styles.emptyStateSubtext}>
@@ -930,52 +864,46 @@ const CommunityScreenContent: React.FC = () => {
                 </Text>
               </View>
             )}
-            {Array.isArray(cryptoNarratives) && cryptoNarratives.length > 0 && cryptoNarratives.map((narrative) => {
-              if (!narrative || !narrative.id) return null;
+            {cryptoNarratives.map((narrative) => {
               const isFaded = fadedNarratives.has(narrative.id);
 
               return (
                 <View key={narrative.id}>
                   {/* Narrative Title */}
-                  <Text style={styles.narrativePageTitle}>{narrative.title || 'Untitled Narrative'}</Text>
+                  <Text style={styles.narrativePageTitle}>{narrative.title}</Text>
                   
                   <View
                     style={[styles.narrativeCard, isFaded && styles.narrativeCardMuted]}
                   >
 
                   {/* Current Positions */}
-                  {Array.isArray(narrative.assets) && narrative.assets.length > 0 && (() => {
+                  {narrative.assets.length > 0 && (() => {
                     // Extract position values from reason text
                     // Format: "223,341 $ETH($736M)" or "$ETH($65.4M)"
                     const positionValues = new Map<string, string>();
-                    const reasonText = narrative.insights?.reason || '';
+                    const reasonText = narrative.insights.reason;
                     
                     // Try to extract values like "$ETH($736M)" or "20,000 $ETH($65.4M)"
                     narrative.assets.forEach((asset) => {
-                      try {
-                        if (!asset || typeof asset !== 'string') return;
-                        const assetSymbol = asset.replace('$', '');
-                        // Escape special regex characters
-                        const escapedSymbol = assetSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        
-                        // Look for patterns like "$ETH($736M)" or "223,341 $ETH($736M)"
-                        // Pattern: (optional number) $SYMBOL($value)
-                        const pattern = new RegExp(`(?:\\d+[,\\d]*\\s+)?\\$${escapedSymbol}\\s*\\(([\\$\\d.]+[BMK]?)\\)`, 'gi');
-                        let match;
-                        let lastValue: string | null = null;
-                        
-                        // Find all matches (compatible with React Native)
-                        while ((match = pattern.exec(reasonText)) !== null) {
-                          if (match[1]) {
-                            lastValue = match[1];
-                          }
+                      const assetSymbol = asset.replace('$', '');
+                      // Escape special regex characters
+                      const escapedSymbol = assetSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      
+                      // Look for patterns like "$ETH($736M)" or "223,341 $ETH($736M)"
+                      // Pattern: (optional number) $SYMBOL($value)
+                      const pattern = new RegExp(`(?:\\d+[,\\d]*\\s+)?\\$${escapedSymbol}\\s*\\(([\\$\\d.]+[BMK]?)\\)`, 'gi');
+                      let match;
+                      let lastValue: string | null = null;
+                      
+                      // Find all matches (compatible with React Native)
+                      while ((match = pattern.exec(reasonText)) !== null) {
+                        if (match[1]) {
+                          lastValue = match[1];
                         }
-                        
-                        if (lastValue) {
-                          positionValues.set(asset, lastValue);
-                        }
-                      } catch (e) {
-                        console.warn('Error extracting position value for asset:', asset, e);
+                      }
+                      
+                      if (lastValue) {
+                        positionValues.set(asset, lastValue);
                       }
                     });
                     
@@ -983,8 +911,7 @@ const CommunityScreenContent: React.FC = () => {
                       <View style={styles.positionsSection}>
                         <Text style={styles.sectionLabel}>Positions</Text>
                         <View style={styles.positionsRow}>
-                          {Array.isArray(narrative.assets) && narrative.assets.map((asset) => {
-                            if (!asset || typeof asset !== 'string') return null;
+                          {narrative.assets.map((asset) => {
                             const value = positionValues.get(asset);
                             return (
                               <View key={asset} style={styles.positionTag}>
@@ -1000,32 +927,26 @@ const CommunityScreenContent: React.FC = () => {
                   })()}
 
                   {/* News Widget */}
-                  {Array.isArray(narrative.insights?.headlines) && narrative.insights.headlines.length > 0 && (
+                  {narrative.insights.headlines && narrative.insights.headlines.length > 0 && (
                     <View style={styles.headlinesSection}>
                       <Text style={styles.sectionLabel}>News</Text>
                       {narrative.insights.headlines.slice(0, 5).map((headline, index) => {
-                        try {
-                          if (!headline || !headline.title) return null;
-                          // Remove "Current positions:" section from headline text
-                          let cleanedTitle = headline.title || '';
-                          // Remove everything from "Current positions:" (case insensitive) to the end
-                          const positionsPattern = /\n\s*Current\s+positions?:?\s*\n.*$/is;
-                          cleanedTitle = cleanedTitle.replace(positionsPattern, '').trim();
-                          
-                          return (
-                            <Pressable
-                              key={`${headline.url || index}-${index}`}
-                              onPress={() => headline.url && Linking.openURL(headline.url)}
-                              style={styles.headlineLink}
-                            >
-                              <Text style={styles.headlineText}>{cleanedTitle}</Text>
-                              <Ionicons name="open-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
-                            </Pressable>
-                          );
-                        } catch (e) {
-                          console.warn('Error rendering headline:', e);
-                          return null;
-                        }
+                        // Remove "Current positions:" section from headline text
+                        let cleanedTitle = headline.title;
+                        // Remove everything from "Current positions:" (case insensitive) to the end
+                        const positionsPattern = /\n\s*Current\s+positions?:?\s*\n.*$/is;
+                        cleanedTitle = cleanedTitle.replace(positionsPattern, '').trim();
+                        
+                        return (
+                          <Pressable
+                            key={`${headline.url}-${index}`}
+                            onPress={() => headline.url && Linking.openURL(headline.url)}
+                            style={styles.headlineLink}
+                          >
+                            <Text style={styles.headlineText}>{cleanedTitle}</Text>
+                            <Ionicons name="open-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
+                          </Pressable>
+                        );
                       })}
                     </View>
                   )}
@@ -1053,27 +974,24 @@ const CommunityScreenContent: React.FC = () => {
             {marketRooms.length === 0 && (
               <Text style={styles.emptyStateText}>No active rooms yet</Text>
             )}
-            {Array.isArray(marketRooms) && marketRooms.map((room) => {
-              if (!room || !room.id) return null;
-              return (
-                <Pressable
-                  key={room.id}
-                  style={styles.roomRow}
-                  onPress={() => openRoomSheet(room)}
-                >
-                  <View style={styles.roomHeader}>
-                    <Text style={styles.roomTitle}>{room.title || 'Untitled Room'}</Text>
-                    <Text style={styles.roomMeta}>{room.active || 0} signals active</Text>
-                  </View>
-                  <Text style={styles.roomLatest} numberOfLines={1}>
-                    Latest headline ▸ {room.latest || 'No updates'}
-                  </Text>
-                  <View style={styles.roomCTA}>
-                    <Text style={styles.roomCTAText}>Open room</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+            {marketRooms.map((room) => (
+              <Pressable
+                key={room.id}
+                style={styles.roomRow}
+                onPress={() => openRoomSheet(room)}
+              >
+                <View style={styles.roomHeader}>
+                  <Text style={styles.roomTitle}>{room.title}</Text>
+                  <Text style={styles.roomMeta}>{room.active} signals active</Text>
+                </View>
+                <Text style={styles.roomLatest} numberOfLines={1}>
+                  Latest headline ▸ {room.latest}
+                </Text>
+                <View style={styles.roomCTA}>
+                  <Text style={styles.roomCTAText}>Open room</Text>
+                </View>
+              </Pressable>
+            ))}
           </View>
         </GlowingBorder>
         </>
@@ -1107,47 +1025,41 @@ const CommunityScreenContent: React.FC = () => {
                 <Text style={styles.sheetSubtitle}>Narrative snapshot</Text>
                 <Text style={styles.sheetMeta}>
                   {sheetVelocity?.direction ?? '—'} {sheetVelocity?.percent ?? 0}% (24h) ·{' '}
-                  {Array.isArray(sheetData.insights?.sources) ? sheetData.insights.sources.length : 0} sources ·{' '}
-                  {getConfidenceLabel(sheetData.insights?.confidence?.level || 'low')} confidence
+                  {sheetData.insights.sources.length} sources ·{' '}
+                  {getConfidenceLabel(sheetData.insights.confidence.level)} confidence
                 </Text>
                 <View style={styles.sheetSection}>
                   <Text style={styles.sheetWhy} numberOfLines={3}>
                     Why: {getWhyLine(sheetData.insights.reason)}
                   </Text>
                 </View>
-                {Array.isArray(sheetData.insights?.headlines) && sheetData.insights.headlines.length > 0 && (
+                {sheetData.insights.headlines?.length > 0 && (
                   <>
                     <Text style={styles.sheetSubtitle}>Latest headlines</Text>
                     <View style={styles.sheetSection}>
-                      {Array.isArray(sheetData.insights.headlines) && sheetData.insights.headlines.slice(0, 3).map((headline: { title: string; url: string }, index: number) => {
-                        if (!headline || !headline.title) return null;
-                        return (
-                          <Pressable
-                            key={`${headline.title}-${index}`}
-                            onPress={() => headline.url && Linking.openURL(headline.url)}
-                            style={styles.sheetHeadlineLink}
-                          >
-                            <Text style={styles.sheetBullet}>
-                              • {headline.title}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
+                      {sheetData.insights.headlines.slice(0, 3).map((headline: { title: string; url: string }, index: number) => (
+                        <Pressable
+                          key={`${headline.title}-${index}`}
+                          onPress={() => headline.url && Linking.openURL(headline.url)}
+                          style={styles.sheetHeadlineLink}
+                        >
+                          <Text style={styles.sheetBullet}>
+                            • {headline.title}
+                          </Text>
+                        </Pressable>
+                      ))}
                     </View>
                   </>
                 )}
-                {Array.isArray(sheetData.insights?.sources) && sheetData.insights.sources.length > 0 && (
+                {sheetData.insights.sources?.length > 0 && (
                   <>
                     <Text style={styles.sheetSubtitle}>Sources</Text>
                     <View style={styles.sheetSources}>
-                      {Array.isArray(sheetData.insights.sources) && sheetData.insights.sources.map((source: string) => {
-                        if (!source || typeof source !== 'string') return null;
-                        return (
-                          <View key={source} style={styles.sourcePill}>
-                            <Text style={styles.sourcePillText}>{source.toUpperCase()}</Text>
-                          </View>
-                        );
-                      })}
+                      {(sheetData.insights.sources || []).map((source: string) => (
+                        <View key={source} style={styles.sourcePill}>
+                          <Text style={styles.sourcePillText}>{source.toUpperCase()}</Text>
+                        </View>
+                      ))}
                     </View>
                   </>
                 )}
@@ -1158,6 +1070,63 @@ const CommunityScreenContent: React.FC = () => {
                 <Text style={styles.sheetTitle}>{sheetData.title}</Text>
                 <Text style={styles.sheetSubtitle}>Market room</Text>
 
+                {/* Stance Voting */}
+                <View style={styles.stanceContainer}>
+                  <View style={styles.stanceButtons}>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'bullish' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'bullish' ? 'rgba(16, 185, 129, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('bullish')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>🟢</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'bullish' && styles.stanceLabelActive]}>
+                        Bullish
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.bullish}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'bearish' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'bearish' ? 'rgba(239, 68, 68, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('bearish')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>🔴</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'bearish' && styles.stanceLabelActive]}>
+                        Bearish
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.bearish}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.stanceButton,
+                        stanceData?.userStance === 'neutral' && styles.stanceButtonActive,
+                        { backgroundColor: stanceData?.userStance === 'neutral' ? 'rgba(107, 114, 128, 0.2)' : 'transparent' },
+                      ]}
+                      onPress={() => handleCastStance('neutral')}
+                      disabled={stanceLoading}
+                    >
+                      <Text style={styles.stanceEmoji}>⚪</Text>
+                      <Text style={[styles.stanceLabel, stanceData?.userStance === 'neutral' && styles.stanceLabelActive]}>
+                        Neutral
+                      </Text>
+                      {stanceData && (
+                        <Text style={styles.stanceCount}>{stanceData.counts.neutral}</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+
                 <View style={styles.messageTypeRow}>
                   {([
                     { key: 'bull', label: 'Bull' },
@@ -1165,28 +1134,25 @@ const CommunityScreenContent: React.FC = () => {
                     { key: 'question', label: 'Question' },
                     { key: 'insight', label: 'Insight' },
                     { key: 'source', label: 'Source' },
-                  ] as const).map((type) => {
-                    if (!type || !type.key) return null;
-                    return (
-                      <Pressable
-                        key={type.key}
+                  ] as const).map((type) => (
+                    <Pressable
+                      key={type.key}
+                      style={[
+                        styles.messageTypePill,
+                        roomMessageType === type.key && styles.messageTypePillActive,
+                      ]}
+                      onPress={() => setRoomMessageType(type.key)}
+                    >
+                      <Text
                         style={[
-                          styles.messageTypePill,
-                          roomMessageType === type.key && styles.messageTypePillActive,
+                          styles.messageTypeText,
+                          roomMessageType === type.key && styles.messageTypeTextActive,
                         ]}
-                        onPress={() => setRoomMessageType(type.key)}
                       >
-                        <Text
-                          style={[
-                            styles.messageTypeText,
-                            roomMessageType === type.key && styles.messageTypeTextActive,
-                          ]}
-                        >
-                          {type.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                        {type.label}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
 
                 <View style={styles.roomMessages}>
@@ -1195,15 +1161,14 @@ const CommunityScreenContent: React.FC = () => {
                   {!roomLoading && !roomError && roomMessages.length === 0 && (
                     <Text style={styles.emptyStateText}>Be the first to add a take</Text>
                   )}
-                  {Array.isArray(roomMessages) && roomMessages.map((message) => {
-                    if (!message || !message.id) return null;
+                  {roomMessages.map((message) => {
                     const effectiveUserId = userId || '11111111-1111-1111-1111-111111111111';
                     const isOwnMessage = message.userId === effectiveUserId;
                     
                     return (
                       <View key={message.id} style={styles.roomMessageRow}>
                         <View style={styles.roomMessageHeader}>
-                          <Text style={styles.roomMessageAuthor}>@{message.username || 'unknown'}</Text>
+                          <Text style={styles.roomMessageAuthor}>@{message.username}</Text>
                           {isOwnMessage && (
                             <Pressable
                               onPress={() => handleDeleteRoomMessage(message.id)}
@@ -1213,7 +1178,7 @@ const CommunityScreenContent: React.FC = () => {
                             </Pressable>
                           )}
                         </View>
-                        <Text style={styles.roomMessageText}>{message.text || ''}</Text>
+                        <Text style={styles.roomMessageText}>{message.text}</Text>
                       </View>
                     );
                   })}
@@ -1244,15 +1209,6 @@ const CommunityScreenContent: React.FC = () => {
         </View>
       )}
     </View>
-  );
-};
-
-// Export wrapped component with error boundary
-export const CommunityScreen: React.FC = () => {
-  return (
-    <ErrorBoundary>
-      <CommunityScreenContent />
-    </ErrorBoundary>
   );
 };
 
@@ -2110,6 +2066,47 @@ const styles = StyleSheet.create({
   },
   roomMessageDeleteButton: {
     padding: theme.spacing.xs,
+  },
+  stanceContainer: {
+    marginBottom: theme.spacing.md,
+  },
+  stanceButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    justifyContent: 'space-between',
+  },
+  stanceButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: theme.spacing.xs,
+  },
+  stanceButtonActive: {
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 2,
+  },
+  stanceEmoji: {
+    fontSize: theme.typography.sizes.md,
+  },
+  stanceLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    fontWeight: theme.typography.weights.medium,
+  },
+  stanceLabelActive: {
+    color: theme.colors.textPrimary,
+    fontWeight: theme.typography.weights.semibold,
+  },
+  stanceCount: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textTertiary,
+    fontWeight: theme.typography.weights.medium,
   },
   roomMessageText: {
     fontSize: theme.typography.sizes.sm,

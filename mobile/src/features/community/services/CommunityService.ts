@@ -78,6 +78,26 @@ export interface MarketMessage {
   createdAt: string;
 }
 
+export type StanceType = 'bullish' | 'bearish' | 'neutral';
+
+export interface NarrativeStance {
+  id: string;
+  narrativeId: string;
+  userId: string;
+  stance: StanceType;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StanceData {
+  userStance: StanceType | null;
+  counts: {
+    bullish: number;
+    bearish: number;
+    neutral: number;
+  };
+}
+
 /**
  * Community Service
  * Handles all API calls for community features
@@ -296,6 +316,41 @@ class CommunityServiceClass {
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to get feed');
+    }
+  }
+
+  /**
+   * Cast or update a stance vote on a narrative
+   */
+  async castStance(
+    userId: string,
+    narrativeId: string,
+    stance: StanceType
+  ): Promise<NarrativeStance> {
+    try {
+      const response = await axios.post(
+        `${COMMUNITY_API_BASE_URL}/rooms/${narrativeId}/stance`,
+        { stance },
+        { headers: this.getHeaders(userId) }
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to cast stance');
+    }
+  }
+
+  /**
+   * Get stance data for a narrative (user's stance + counts)
+   */
+  async getStance(userId: string, narrativeId: string): Promise<StanceData> {
+    try {
+      const response = await axios.get(
+        `${COMMUNITY_API_BASE_URL}/rooms/${narrativeId}/stance`,
+        { headers: this.getHeaders(userId) }
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to get stance');
     }
   }
 }
