@@ -2,8 +2,9 @@ import axios from 'axios';
 import type { CommunityNarrative } from '../hooks/useCommunityData';
 
 // API Configuration
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000/api/v1';
-const COMMUNITY_API_BASE_URL = process.env.COMMUNITY_API_BASE_URL || 'http://localhost:3000/api';
+// Use 127.0.0.1 instead of localhost for better web compatibility
+const API_BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3000/api/v1';
+const COMMUNITY_API_BASE_URL = process.env.COMMUNITY_API_BASE_URL || 'http://127.0.0.1:3000/api';
 
 // For development: use your machine's local IP for testing on device
 // const API_BASE_URL = 'http://192.168.1.x:3000/api/v1';
@@ -238,6 +239,20 @@ class CommunityServiceClass {
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to post message');
+    }
+  }
+
+  /**
+   * Delete a market room message
+   */
+  async deleteRoomMessage(userId: string, narrativeId: string, messageId: string): Promise<void> {
+    try {
+      await axios.delete(
+        `${COMMUNITY_API_BASE_URL}/rooms/${narrativeId}/messages/${messageId}`,
+        { headers: this.getHeaders(userId) }
+      );
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to delete message');
     }
   }
 

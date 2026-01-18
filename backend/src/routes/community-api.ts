@@ -185,5 +185,43 @@ router.post('/rooms/:narrativeId/messages', async (req: AuthenticatedRequest, re
   }
 });
 
+/**
+ * DELETE /api/rooms/:narrativeId/messages/:messageId
+ */
+router.delete('/rooms/:narrativeId/messages/:messageId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const paramsSchema = z.object({
+      narrativeId: z.string().uuid(),
+      messageId: z.string().uuid(),
+    });
+
+    const { narrativeId, messageId } = paramsSchema.parse(req.params);
+    const userId = req.userId!;
+
+    const narrativeExists = await prisma.detectedNarrative.findUnique({
+      where: { id: narrativeId },
+      select: { id: true },
+    });
+
+    if (!narrativeExists) {
+      return res.status(404).json({ error: 'Narrative not found' });
+    }
+
+    await marketRoomRepo.deleteMarketMessage(messageId, userId);
+    res.status(204).send();
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid parameters', details: error.errors });
+    }
+    if (error.message === 'Message not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error.message.includes('Unauthorized')) {
+      return res.status(403).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Failed to delete message', details: error.message });
+  }
+});
+
 export default router;
 

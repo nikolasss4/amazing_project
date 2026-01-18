@@ -54,4 +54,27 @@ export async function createMarketMessage(
   };
 }
 
+export async function deleteMarketMessage(
+  messageId: string,
+  userId: string
+): Promise<void> {
+  // Verify the message exists and belongs to the user
+  const message = await prisma.marketMessage.findUnique({
+    where: { id: messageId },
+    select: { userId: true },
+  });
+
+  if (!message) {
+    throw new Error('Message not found');
+  }
+
+  if (message.userId !== userId) {
+    throw new Error('Unauthorized: You can only delete your own messages');
+  }
+
+  await prisma.marketMessage.delete({
+    where: { id: messageId },
+  });
+}
+
 
