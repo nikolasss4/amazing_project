@@ -342,7 +342,7 @@ export const ImproveScreen: React.FC = () => {
                     </View>
 
                     {/* Right: Action buttons (vertical stack) */}
-                    <View style={styles.actionsContainer}>
+                    <View style={styles.upDownButtonsContainer}>
                       <UpDownButton
                         direction="up"
                         selected={selectedAnswer === 'up'}
@@ -428,13 +428,11 @@ export const ImproveScreen: React.FC = () => {
                   {/* Right: Solution actions */}
                   <View style={styles.actionsContainer}>
                     <LiquidGlassButton
-                      label="Try Again"
                       icon="refresh"
                       variant="secondary"
                       onPress={handleFlipBack}
                     />
                     <LiquidGlassButton
-                      label="Next"
                       icon="arrow-forward"
                       variant="primary"
                       color={theme.colors.accent}
@@ -532,35 +530,29 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
         disabled={disabled}
         style={[
           styles.upDownButton,
-          { borderColor: `${buttonColor}40` },
-          selected && { borderColor: buttonColor, backgroundColor: `${buttonColor}25` },
+          { borderColor: `${buttonColor}60` },
+          selected && { borderColor: buttonColor, backgroundColor: `${buttonColor}20` },
           disabled && styles.upDownButtonDisabled,
         ]}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         android_ripple={null}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
-        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
         {/* Colored glow overlay */}
         <View 
           style={[
             styles.buttonGlowOverlay, 
-            { backgroundColor: `${buttonColor}15` }
+            { backgroundColor: `${buttonColor}20` }
           ]} 
           pointerEvents="none" 
         />
         <View style={styles.upDownButtonContent} pointerEvents="none">
           <Ionicons
             name={icon as keyof typeof Ionicons.glyphMap}
-            size={20}
-            color={selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor)}
+            size={22}
+            color={disabled ? theme.colors.textTertiary : buttonColor}
           />
-          <Text style={[
-            styles.upDownButtonText,
-            { color: selected ? buttonColor : (disabled ? theme.colors.textTertiary : buttonColor) },
-          ]}>
-            {label}
-          </Text>
         </View>
       </Pressable>
     </Animated.View>
@@ -569,7 +561,7 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
 
 // Liquid Glass Button Component
 interface LiquidGlassButtonProps {
-  label: string;
+  label?: string;
   icon?: keyof typeof Ionicons.glyphMap;
   variant: 'primary' | 'secondary';
   selected?: boolean;
@@ -645,13 +637,15 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
             color={selected ? activeColor : (disabled ? theme.colors.textTertiary : theme.colors.textPrimary)}
           />
         )}
-        <Text style={[
-          styles.glassButtonText,
-          selected && { color: activeColor },
-          disabled && styles.glassButtonTextDisabled,
-        ]}>
-          {label}
-        </Text>
+        {label && (
+          <Text style={[
+            styles.glassButtonText,
+            selected && { color: activeColor },
+            disabled && styles.glassButtonTextDisabled,
+          ]}>
+            {label}
+          </Text>
+        )}
       </View>
     </AnimatedPressable>
   );
@@ -727,7 +721,6 @@ const styles = StyleSheet.create({
   // Card wrapper with padding from phone edges
   cardContainerWrapper: {
     flex: 1,
-    paddingHorizontal: theme.spacing.md,
     paddingBottom: 100, // Large bottom padding to avoid menu overlap
   },
   // Card container
@@ -782,9 +775,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10, 10, 14, 0.98)',
     borderRadius: theme.borderRadius.xl - 2,
   },
-  // Chart section (larger portion of card - 80%)
+  // Chart section (smaller portion to give more room to scenario)
   chartSection: {
-    flex: 4,
+    flex: 2.5,
     minHeight: 0,
     position: 'relative',
     borderBottomWidth: 1,
@@ -794,9 +787,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
   },
-  // Bottom section - text and buttons (20%)
+  // Bottom section - text and buttons (more room for scenario)
   bottomSection: {
-    flex: 1,
+    flex: 2,
     minHeight: 0,
     flexDirection: 'row',
     paddingHorizontal: theme.spacing.md,
@@ -810,7 +803,7 @@ const styles = StyleSheet.create({
   scenarioContainer: {
     flex: 1,
     minHeight: 0,
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   },
   scenarioLabel: {
     fontSize: theme.typography.sizes.xs,
@@ -828,18 +821,30 @@ const styles = StyleSheet.create({
   },
   // Actions (right side)
   actionsContainer: {
-    width: 110,
-    justifyContent: 'flex-start',
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
     gap: theme.spacing.sm,
+    zIndex: 100, // Ensure buttons are above other elements
+    elevation: 100, // Android elevation
+  },
+  // Up/Down buttons container (front side - closer together)
+  upDownButtonsContainer: {
+    width: 50,
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
     zIndex: 100, // Ensure buttons are above other elements
     elevation: 100, // Android elevation
   },
   // Up/Down Button styles
   upDownButton: {
+    width: 50,
+    height: 50,
     borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    backgroundColor: theme.colors.glassBackground,
     zIndex: 101,
     elevation: 101,
   },
@@ -851,23 +856,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
   },
   upDownButtonContent: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    minHeight: 44,
-  },
-  upDownButtonText: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.bold,
   },
   // Analysis section (solution back)
   analysisContainer: {
     flex: 1,
     minHeight: 0,
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   },
   analysisLabel: {
     fontSize: theme.typography.sizes.xs,
@@ -886,7 +883,7 @@ const styles = StyleSheet.create({
   },
   answerSummary: {
     gap: 4,
-    marginTop: 'auto',
+    marginTop: theme.spacing.sm,
   },
   answerRow: {
     flexDirection: 'row',
@@ -946,7 +943,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   glassButtonText: {
-    fontSize: theme.typography.sizes.sm,
+    fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.semibold,
     color: theme.colors.textPrimary,
   },
