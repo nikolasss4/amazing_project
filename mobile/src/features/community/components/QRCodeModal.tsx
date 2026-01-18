@@ -6,7 +6,6 @@ import {
   Modal,
   Pressable,
   Dimensions,
-  Alert,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,50 +13,37 @@ import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import QRCode from 'react-native-qrcode-svg';
 import { theme } from '@app/theme';
-
-// Conditional import for web compatibility
-let QRCode: any = null;
-try {
-  if (Platform.OS !== 'web') {
-    QRCode = require('react-native-qrcode-svg').default;
-  }
-} catch (e) {
-  // QR code package not available on web
-  console.log('QR code package not available on this platform');
-}
 
 interface QRCodeModalProps {
   visible: boolean;
   onClose: () => void;
-  userId: string;
   username: string;
 }
 
 const { width } = Dimensions.get('window');
 const QR_SIZE = Math.min(width - 120, 280);
 
-/**
- * QR Code Modal
- * 
- * Displays user's QR code for friend addition.
- * QR code contains: "risklaba:friend:{userId}"
- */
 export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   visible,
   onClose,
-  userId,
   username,
 }) => {
   const handleClose = () => {
+    // Safe haptic call - no-op on web
     if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
     }
     onClose();
   };
 
-  // Generate QR code data: "risklaba:friend:userId"
-  const qrData = `risklaba:friend:${userId}`;
+  // QR code data - URL for community registration form
+  const qrData = 'https://docs.google.com/forms/d/e/1FAIpQLSc6MTr5ECPEKmIsQH161e6fD7-2daB6MD89a33MrVTy8itgMQ/viewform?usp=publish-editor';
 
   return (
     <Modal
@@ -85,7 +71,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                       <View style={styles.qrIcon}>
                         <Ionicons name="qr-code" size={24} color="#FF6B35" />
                       </View>
-                      <Text style={styles.headerTitle}>Add Friends</Text>
+                      <Text style={styles.headerTitle}>Connect with Friends</Text>
                     </View>
                     <Pressable onPress={handleClose} style={styles.closeButton}>
                       <Ionicons name="close" size={24} color={theme.colors.textPrimary} />
@@ -95,24 +81,13 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                   {/* QR Code Container */}
                   <View style={styles.qrContainer}>
                     <View style={styles.qrWrapper}>
-                      {Platform.OS !== 'web' && QRCode ? (
-                        <QRCode
-                          value={qrData}
-                          size={QR_SIZE - 40}
-                          backgroundColor="white"
-                          color="black"
-                        />
-                      ) : (
-                        <View style={styles.webFallback}>
-                          <Ionicons name="qr-code" size={80} color="#FF6B35" />
-                          <Text style={styles.webFallbackText}>
-                            QR codes are only available{'\n'}on mobile devices
-                          </Text>
-                          <Text style={styles.webFallbackId}>
-                            Your ID: {userId}
-                          </Text>
-                        </View>
-                      )}
+                      <QRCode
+                        value={qrData}
+                        size={QR_SIZE - 40}
+                        color="#000000"
+                        backgroundColor="#FFFFFF"
+                        quietZone={10}
+                      />
                     </View>
                     <View style={styles.qrBorder} />
                   </View>
@@ -203,8 +178,8 @@ const styles = StyleSheet.create({
   qrBorder: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: theme.borderRadius.lg,
-    borderWidth: 0,
-    borderColor: 'transparent',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
     pointerEvents: 'none',
   },
   instructions: {
@@ -221,25 +196,5 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.semibold,
     color: '#FF6B35',
   },
-  webFallback: {
-    width: QR_SIZE - 40,
-    height: QR_SIZE - 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.xl,
-  },
-  webFallbackText: {
-    marginTop: theme.spacing.md,
-    fontSize: theme.typography.sizes.md,
-    color: 'rgba(0, 0, 0, 0.7)',
-    textAlign: 'center',
-  },
-  webFallbackId: {
-    marginTop: theme.spacing.lg,
-    fontSize: theme.typography.sizes.sm,
-    color: 'rgba(0, 0, 0, 0.5)',
-    fontFamily: 'monospace',
-  },
 });
+

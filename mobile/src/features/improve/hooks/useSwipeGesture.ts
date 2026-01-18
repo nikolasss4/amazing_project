@@ -24,16 +24,20 @@ export const useSwipeGesture = ({ onSwipeComplete, onSwipeStart }: UseSwipeGestu
 
   // Memoize the gesture to prevent recreation on every render
   const gesture = useMemo(() => Gesture.Pan()
-    .activeOffsetX([-10, 10]) // Require 10px movement before activating (prevents accidental swipes)
-    .failOffsetY([-15, 15]) // Fail if vertical movement is dominant
+    .activeOffsetX([-10, 10]) // Require 10px horizontal movement before activating
+    .failOffsetY([-20, 20]) // Fail if vertical movement exceeds 20px (allows button presses)
     .onStart(() => {
-      if (isDismissing.value) return;
+      // Don't allow new gesture if already dismissing
+      if (isDismissing.value) {
+        return;
+      }
       isActive.value = true;
       if (onSwipeStart) {
         runOnJS(onSwipeStart)();
       }
     })
     .onUpdate((event) => {
+      // Don't allow updates if dismissing
       if (isDismissing.value) return;
       translateX.value = event.translationX;
       // Dampen vertical movement
@@ -45,14 +49,28 @@ export const useSwipeGesture = ({ onSwipeComplete, onSwipeStart }: UseSwipeGestu
 
       if (shouldDismiss) {
         isDismissing.value = true;
+        isActive.value = false;
         // Animate card fully off screen (1.5x width for clean exit with rotation)
         const direction = translateX.value > 0 ? 1 : -1;
+        const targetX = direction * SCREEN_WIDTH * 1.5;
         translateX.value = withTiming(
-          direction * SCREEN_WIDTH * 1.5,
-          { duration: 200 }, // Slightly faster for snappier feel
+          targetX,
+          { duration: 200 },
           (finished) => {
             if (finished && onSwipeComplete) {
+              // Reset state BEFORE calling callback
+              isDismissing.value = false;
+              isActive.value = false;
+              // Reset translate values immediately so next swipe can animate
+              translateX.value = 0;
+              translateY.value = 0;
               runOnJS(onSwipeComplete)();
+            } else if (!finished) {
+              // Animation was cancelled
+              isDismissing.value = false;
+              isActive.value = false;
+              translateX.value = 0;
+              translateY.value = 0;
             }
           }
         );
@@ -123,11 +141,12 @@ export const useSwipeGesture = ({ onSwipeComplete, onSwipeStart }: UseSwipeGestu
   // Reset function that can be called from JS thread
   // Cancels any ongoing animations and resets all values immediately
   const reset = useCallback(() => {
-    // Cancel any ongoing animations to prevent race conditions
+    // Cancel any ongoing animations FIRST to prevent race conditions
     cancelAnimation(translateX);
     cancelAnimation(translateY);
     
-    // Reset values immediately (no animation needed for reset)
+    // CRITICAL: Reset values immediately
+    // These operations are safe to call from JS thread
     translateX.value = 0;
     translateY.value = 0;
     isActive.value = false;

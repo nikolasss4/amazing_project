@@ -120,13 +120,27 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
     });
 
     if (!event.defaultPrevented) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Safe haptic call - no-op on web
+      if (Platform.OS !== 'web') {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } catch (error) {
+          // Silently fail if haptics are not available
+        }
+      }
       navigation.navigate(route.name);
     }
   };
 
   const handleAssistantPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
     setAssistantOpen(true);
   };
 

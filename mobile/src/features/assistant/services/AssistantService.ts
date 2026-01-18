@@ -1,6 +1,5 @@
 /**
  * AssistantService - API interface for AI Assistant
- * Mock implementation for MVP, designed to be replaced with real backend
  */
 
 export interface AssistantQueryRequest {
@@ -14,44 +13,42 @@ export interface AssistantQueryResponse {
   confidence?: number;
 }
 
-// Mock responses based on keywords
-const getMockResponse = (userMessage: string): string => {
-  const lowerMessage = userMessage.toLowerCase();
+export interface VoiceQueryRequest {
+  screenshotBase64: string;
+  audioBase64?: string; // Optional - if transcript is provided
+  transcript?: string; // Optional - if audioBase64 is provided
+  page: string;
+}
 
-  if (lowerMessage.includes('trade') || lowerMessage.includes('buy') || lowerMessage.includes('sell')) {
-    return "I can see you're on the trading screen. To place a trade, select your preferred trading pair from the list, enter the amount you want to trade, and tap the buy or sell button. Always review your order details before confirming!";
-  }
+export interface VoiceQueryResponse {
+  audioBase64: string;
+  transcript: string;
+  responseText: string;
+}
 
-  if (lowerMessage.includes('learn') || lowerMessage.includes('scenario')) {
-    return "The Learn section uses real-world scenarios to help you understand market dynamics. Each correct answer earns you XP and builds your streak. Take your time to think through each scenario—understanding the 'why' is more important than speed!";
-  }
-
-  if (lowerMessage.includes('community') || lowerMessage.includes('leaderboard')) {
-    return "The Community page shows top traders on the leaderboard, celebrity portfolio insights, and social sentiment. Use this information to learn from others, but remember—always do your own research before making trading decisions!";
-  }
-
-  if (lowerMessage.includes('help') || lowerMessage.includes('how')) {
-    return "I'm here to help! I can explain features, guide you through the app, and answer questions about trading concepts. Just ask me anything, and I'll do my best to assist you.";
-  }
-
-  if (lowerMessage.includes('balance') || lowerMessage.includes('money') || lowerMessage.includes('deposit')) {
-    return "Your account balance is displayed at the top of the Trade screen. To add funds, you would typically go to your account settings and select a deposit method. Note: This is a demo environment with mock balances for learning purposes.";
-  }
-
-  return "Thanks for your question! I'm analyzing the screenshot you shared. In a production environment, I would use advanced AI to understand the context and provide specific guidance. For now, feel free to ask me about trading, learning scenarios, or navigating the app!";
-};
+// API Configuration
+// Use 127.0.0.1 instead of localhost for better web compatibility
+const API_BASE_URL = process.env.API_BASE_URL || 'http://127.0.0.1:3000';
 
 class AssistantServiceClass {
   /**
-   * Send query to AI Assistant
-   * TODO: Replace with real API endpoint
+   * Send text query to AI Assistant (legacy text interface)
    */
   async query(request: AssistantQueryRequest): Promise<AssistantQueryResponse> {
     // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Mock response
-    const response = getMockResponse(request.message);
+    // Mock response for text queries (keep for backward compatibility)
+    const lowerMessage = request.message.toLowerCase();
+    let response = "Thanks for your question! I'm analyzing the screenshot you shared.";
+    
+    if (lowerMessage.includes('trade') || lowerMessage.includes('buy') || lowerMessage.includes('sell')) {
+      response = "I can see you're on the trading screen. To place a trade, select your preferred trading pair from the list, enter the amount you want to trade, and tap the buy or sell button. Always review your order details before confirming!";
+    } else if (lowerMessage.includes('learn') || lowerMessage.includes('scenario')) {
+      response = "The Learn section uses real-world scenarios to help you understand market dynamics. Each correct answer earns you XP and builds your streak.";
+    } else if (lowerMessage.includes('community') || lowerMessage.includes('leaderboard')) {
+      response = "The Community page shows top traders on the leaderboard, celebrity portfolio insights, and social sentiment.";
+    }
 
     return {
       message: response,
@@ -60,46 +57,44 @@ class AssistantServiceClass {
   }
 
   /**
-   * API Configuration
-   * TODO: Set these via environment variables or app config
+   * Send voice query with screenshot
    */
-  private apiEndpoint = 'https://api.risklaba.com/v1/assistant';
-  private apiKey = 'YOUR_API_KEY_HERE';
-
-  /**
-   * Real API implementation (commented out for MVP)
-   */
-  /*
-  async queryReal(request: AssistantQueryRequest): Promise<AssistantQueryResponse> {
+  async voiceQuery(request: VoiceQueryRequest, userId?: string): Promise<VoiceQueryResponse> {
     try {
-      const response = await fetch(`${this.apiEndpoint}/query`, {
+      const url = `${API_BASE_URL}/api/voice/query`;
+      const userIdHeader = userId || 'demo-user-001';
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          'x-user-id': userIdHeader, // Always send userId header
         },
         body: JSON.stringify({
-          message: request.message,
-          screenshot: request.screenshot,
-          session_id: request.sessionId,
+          screenshotBase64: request.screenshotBase64,
+          audioBase64: request.audioBase64,
+          transcript: request.transcript, // Include transcript when using Web Speech API
+          page: request.page,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+
       return {
-        message: data.message,
-        confidence: data.confidence,
+        audioBase64: data.audioBase64,
+        transcript: data.transcript,
+        responseText: data.responseText,
       };
-    } catch (error) {
-      console.error('AssistantService error:', error);
+    } catch (error: any) {
+      console.error('AssistantService voiceQuery error:', error);
       throw error;
     }
   }
-  */
 }
 
 export const AssistantService = new AssistantServiceClass();
