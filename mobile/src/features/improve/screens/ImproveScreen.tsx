@@ -108,6 +108,7 @@ export const ImproveScreen: React.FC = () => {
   const flipRotation = useSharedValue(0);
   const streakPulse = useSharedValue(1);
   const feedbackOpacity = useSharedValue(0);
+  const cardTranslateX = useSharedValue(0);
   
   // Border color state: 0 = silver (neutral), 1 = green (correct), -1 = red (incorrect)
   const borderColorState = useSharedValue(0);
@@ -133,6 +134,7 @@ export const ImproveScreen: React.FC = () => {
     flipRotation.value = 0;
     borderColorState.value = 0; // Reset to silver
     feedbackOpacity.value = 0;
+    // Don't reset cardTranslateX here - it's handled in handleNext animation
   }, [currentScenarioIndex, flipRotation, borderColorState, scenarios.length]);
 
   
@@ -177,6 +179,11 @@ export const ImproveScreen: React.FC = () => {
   // Feedback overlay animation
   const feedbackAnimatedStyle = useAnimatedStyle(() => ({
     opacity: feedbackOpacity.value,
+  }));
+
+  // Card fly-away animation
+  const cardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: cardTranslateX.value }],
   }));
 
   // Select answer and immediately show solution
@@ -253,8 +260,25 @@ export const ImproveScreen: React.FC = () => {
 
   // Handle "Next" button press (from solution card)
   const handleNext = () => {
-    // Reset is already called in handleNextScenario, but call it here too for safety
-    handleNextScenario();
+    // Animate card flying away to the left
+    const screenWidth = Dimensions.get('window').width;
+    cardTranslateX.value = withTiming(
+      -screenWidth * 1.5, // Fly completely off screen to the left
+      {
+        duration: 400,
+        easing: Easing.out(Easing.ease),
+      },
+      () => {
+        // After animation completes, move to next scenario
+        runOnJS(handleNextScenario)();
+        // Position next card off-screen to the right, then animate it in
+        cardTranslateX.value = screenWidth;
+        cardTranslateX.value = withTiming(0, {
+          duration: 400,
+          easing: Easing.out(Easing.ease),
+        });
+      }
+    );
   };
 
 
@@ -300,7 +324,7 @@ export const ImproveScreen: React.FC = () => {
 
         {/* Scenario Card Container with padding */}
         <View style={styles.cardContainerWrapper}>
-          <View style={styles.cardContainer}>
+          <Animated.View style={[styles.cardContainer, cardAnimatedStyle]}>
             {/* Loading State */}
             {isLoading && <ScenarioCardSkeleton />}
 
@@ -444,7 +468,7 @@ export const ImproveScreen: React.FC = () => {
               </Animated.View>
               </>
             )}
-          </View>
+          </Animated.View>
         </View>
 
         {/* Feedback overlay */}
@@ -490,7 +514,7 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
   const isUp = direction === 'up';
   const buttonColor = isUp ? theme.colors.bullish : theme.colors.bearish;
   const label = isUp ? 'Up' : 'Down';
-  const icon = isUp ? 'trending-up' : 'trending-down';
+  const icon = isUp ? 'arrow-up' : 'arrow-down';
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -530,28 +554,52 @@ const UpDownButton: React.FC<UpDownButtonProps> = ({
         disabled={disabled}
         style={[
           styles.upDownButton,
-          { borderColor: `${buttonColor}60` },
-          selected && { borderColor: buttonColor, backgroundColor: `${buttonColor}20` },
+          { borderColor: `${buttonColor}80` },
+          selected && { 
+            borderColor: buttonColor,
+            borderWidth: 1.5,
+            shadowColor: buttonColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.4,
+            shadowRadius: 12,
+            elevation: 6,
+          },
           disabled && styles.upDownButtonDisabled,
         ]}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         android_ripple={null}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
-        <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
-        {/* Colored glow overlay */}
-        <View 
-          style={[
-            styles.buttonGlowOverlay, 
-            { backgroundColor: `${buttonColor}20` }
-          ]} 
-          pointerEvents="none" 
-        />
+        {/* Glass button background - wrapped in View to clip properly */}
+        <View style={styles.upDownButtonBackground}>
+          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+          {/* Colored gradient overlay */}
+          <LinearGradient
+            colors={selected 
+              ? [`${buttonColor}30`, `${buttonColor}15`, 'transparent']
+              : [`${buttonColor}15`, 'transparent', 'transparent']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        </View>
+        {/* Inner highlight for depth */}
+        {selected && (
+          <View 
+            style={[
+              styles.buttonInnerGlow, 
+              { backgroundColor: `${buttonColor}20` }
+            ]} 
+            pointerEvents="none" 
+          />
+        )}
         <View style={styles.upDownButtonContent} pointerEvents="none">
           <Ionicons
             name={icon as keyof typeof Ionicons.glyphMap}
-            size={22}
-            color={disabled ? theme.colors.textTertiary : buttonColor}
+            size={24}
+            color={disabled ? theme.colors.textTertiary : (selected ? buttonColor : `${buttonColor}E0`)}
           />
         </View>
       </Pressable>
@@ -623,17 +671,51 @@ const LiquidGlassButton: React.FC<LiquidGlassButtonProps> = ({
       style={[
         styles.glassButton,
         isPrimary ? styles.glassButtonPrimary : styles.glassButtonSecondary,
-        selected && { borderColor: activeColor, backgroundColor: `${activeColor}20` },
+        selected && { 
+          borderColor: activeColor,
+          borderWidth: 1.5,
+          shadowColor: activeColor,
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.4,
+          shadowRadius: 12,
+          elevation: 6,
+        },
         disabled && styles.glassButtonDisabled,
         animatedStyle,
       ]}
     >
-      <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+      {/* Glass button background - wrapped in View to clip properly */}
+      <View style={styles.glassButtonBackground}>
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {/* Colored gradient overlay */}
+        <LinearGradient
+          colors={selected 
+            ? [`${activeColor}30`, `${activeColor}15`, 'transparent']
+            : isPrimary 
+              ? ['rgba(255, 255, 255, 0.08)', 'transparent', 'transparent']
+              : ['rgba(255, 255, 255, 0.05)', 'transparent', 'transparent']
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+      </View>
+      {/* Inner highlight for depth */}
+      {selected && (
+        <View 
+          style={[
+            styles.glassButtonInnerGlow, 
+            { backgroundColor: `${activeColor}20` }
+          ]} 
+          pointerEvents="none" 
+        />
+      )}
       <View style={styles.glassButtonContent} pointerEvents="none">
         {icon && (
           <Ionicons
             name={icon}
-            size={18}
+            size={20}
             color={selected ? activeColor : (disabled ? theme.colors.textTertiary : theme.colors.textPrimary)}
           />
         )}
@@ -831,7 +913,7 @@ const styles = StyleSheet.create({
   },
   // Up/Down buttons container (front side - closer together)
   upDownButtonsContainer: {
-    width: 50,
+    width: 70,
     justifyContent: 'center',
     gap: theme.spacing.xs,
     zIndex: 100, // Ensure buttons are above other elements
@@ -839,8 +921,8 @@ const styles = StyleSheet.create({
   },
   // Up/Down Button styles
   upDownButton: {
-    width: 50,
-    height: 50,
+    width: 70,
+    height: 85,
     borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
     borderWidth: 1,
@@ -851,9 +933,13 @@ const styles = StyleSheet.create({
   upDownButtonDisabled: {
     opacity: 0.4,
   },
-  buttonGlowOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: theme.borderRadius.md,
+  buttonInnerGlow: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    right: 2,
+    bottom: 2,
+    borderRadius: theme.borderRadius.md - 2,
   },
   upDownButtonContent: {
     flex: 1,
@@ -918,29 +1004,47 @@ const styles = StyleSheet.create({
   },
   // Liquid Glass Button styles
   glassButton: {
+    width: 50,
+    height: 50,
     borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
     borderWidth: 1,
+    position: 'relative',
+  },
+  glassButtonBackground: {
+    width: 50,
+    height: 50,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   glassButtonPrimary: {
-    borderColor: theme.colors.glassBorder,
+    borderColor: `${theme.colors.accent}80`,
     backgroundColor: theme.colors.glassBackground,
   },
   glassButtonSecondary: {
     borderColor: theme.colors.glassBorder,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
+  glassButtonInnerGlow: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    right: 2,
+    bottom: 2,
+    borderRadius: theme.borderRadius.md - 2,
+  },
   glassButtonDisabled: {
     opacity: 0.4,
   },
   glassButtonContent: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    minHeight: 40,
   },
   glassButtonText: {
     fontSize: theme.typography.sizes.xs,
