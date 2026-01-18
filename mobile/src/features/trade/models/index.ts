@@ -35,7 +35,67 @@ export interface TradeOrder {
   condition?: TradeCondition;
 }
 
-// Mock themes/narratives (kept for backward compatibility but no longer used in UI)
+// Mock themes/narratives for basket and pair trading
+export const mockThemes: TradeTheme[] = [
+  {
+    id: 'ai-tokens',
+    name: 'AI Tokens',
+    description: 'Bet on AI ecosystem tokens going up',
+    icon: '🤖',
+    tokens: ['HYPE', 'ASTER', 'AI'],
+    change24h: 5.2,
+    type: 'basket',
+  },
+  {
+    id: 'l2s',
+    name: 'Layer 2s',
+    description: 'Bet on L2 scaling solutions',
+    icon: '⚡',
+    tokens: ['ARB', 'OP', 'STRK'],
+    change24h: 3.8,
+    type: 'basket',
+  },
+  {
+    id: 'defi',
+    name: 'DeFi',
+    description: 'Bet on decentralized finance tokens',
+    icon: '💎',
+    tokens: ['UNI', 'AAVE', 'MKR'],
+    change24h: -1.5,
+    type: 'basket',
+  },
+  {
+    id: 'sol-ecosystem',
+    name: 'SOL Ecosystem',
+    description: 'Bet on Solana ecosystem tokens',
+    icon: '☀️',
+    tokens: ['SOL', 'RAY', 'JUP'],
+    change24h: 7.1,
+    type: 'basket',
+  },
+  {
+    id: 'hype-vs-aster',
+    name: 'HYPE vs ASTER',
+    description: 'Long HYPE, Short ASTER',
+    icon: '⚖️',
+    tokens: ['HYPE', 'ASTER'],
+    change24h: 2.3,
+    type: 'pair',
+    longAsset: 'HYPE',
+    shortAsset: 'ASTER',
+  },
+  {
+    id: 'eth-vs-btc',
+    name: 'ETH vs BTC',
+    description: 'Long ETH, Short BTC',
+    icon: '📊',
+    tokens: ['ETH', 'BTC'],
+    change24h: -0.8,
+    type: 'pair',
+    longAsset: 'ETH',
+    shortAsset: 'BTC',
+  },
+];
 
 // Available assets for trading (common on Pear/Hyperliquid)
 export interface AvailableAsset {
@@ -74,4 +134,42 @@ export const mockTradePairs: TradePair[] = [
   { symbol: 'SOLUSD', displayName: 'SOL/USD', currentPrice: 145.3, change24h: 5.1 },
 ];
 
-// Basket themes (kept for backward compatibility but no longer used in UI)
+// Basket themes (for Basket tab)
+export const basketThemes: TradeTheme[] = [
+  {
+    id: 'ai-tokens',
+    name: 'AI Tokens',
+    description: 'Long a basket of AI ecosystem tokens',
+    icon: '🤖',
+    tokens: ['HYPE', 'ASTER', 'AI'],
+    change24h: 5.2,
+    type: 'basket',
+  },
+  {
+    id: 'l2s',
+    name: 'Layer 2s',
+    description: 'Long L2 scaling solutions',
+    icon: '⚡',
+    tokens: ['ARB', 'OP', 'STRK'],
+    change24h: 3.8,
+    type: 'basket',
+  },
+  {
+    id: 'defi',
+    name: 'DeFi',
+    description: 'Long decentralized finance tokens',
+    icon: '💎',
+    tokens: ['UNI', 'AAVE', 'MKR'],
+    change24h: -1.5,
+    type: 'basket',
+  },
+  {
+    id: 'sol-ecosystem',
+    name: 'SOL Ecosystem',
+    description: 'Long Solana ecosystem tokens',
+    icon: '☀️',
+    tokens: ['SOL', 'RAY', 'JUP'],
+    change24h: 7.1,
+    type: 'basket',
+  },
+];

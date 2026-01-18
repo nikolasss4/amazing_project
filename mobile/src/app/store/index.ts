@@ -1,107 +1,46 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 // Trade Store
 import { TradePair, TradeTheme } from '../../features/trade/models';
-
-// API Base URL
-const getApiBaseUrl = () => {
-  if (Platform.OS === 'web') {
-    return 'http://localhost:8000';
-  }
-  // For mobile devices, use LAN IP
-  return 'http://10.0.11.138:8000';
-};
-
-// Asset with weight for hedge trades
-export interface HedgeAsset {
-  symbol: string;
-  weight: number; // 1-99 percentage
-}
 
 interface TradeState {
   selectedTheme: TradeTheme | null;
   selectedPair: TradePair | null;
   tradeType: 'theme' | 'pair' | 'single' | 'basket';
-  tradeMode: 'simple' | 'hedge'; // New: Simple Trade vs Hedge
   orderType: 'market' | 'limit';
   amount: string;
   side: 'long' | 'short';
-  // For simple trade - user selected assets (2 tokens)
+  // For pair trading - user selected assets
   selectedLongAsset: string | null;
   selectedShortAsset: string | null;
-  // For hedge trade - multiple assets with weights (up to 4 each)
-  hedgeLongAssets: HedgeAsset[];
-  hedgeShortAssets: HedgeAsset[];
   setSelectedTheme: (theme: TradeTheme | null) => void;
   setSelectedPair: (pair: TradePair | null) => void;
   setTradeType: (type: 'theme' | 'pair' | 'single' | 'basket') => void;
-  setTradeMode: (mode: 'simple' | 'hedge') => void;
   setOrderType: (type: 'market' | 'limit') => void;
   setAmount: (amount: string) => void;
   setSide: (side: 'long' | 'short') => void;
   setSelectedLongAsset: (asset: string | null) => void;
   setSelectedShortAsset: (asset: string | null) => void;
-  // Hedge asset management
-  addHedgeLongAsset: (asset: HedgeAsset) => void;
-  removeHedgeLongAsset: (symbol: string) => void;
-  updateHedgeLongAssetWeight: (symbol: string, weight: number) => void;
-  addHedgeShortAsset: (asset: HedgeAsset) => void;
-  removeHedgeShortAsset: (symbol: string) => void;
-  updateHedgeShortAssetWeight: (symbol: string, weight: number) => void;
-  clearHedgeAssets: () => void;
 }
 
 export const useTradeStore = create<TradeState>((set) => ({
   selectedTheme: null,
   selectedPair: null,
   tradeType: 'pair',
-  tradeMode: 'simple',
   orderType: 'market',
   amount: '',
   side: 'long',
   selectedLongAsset: null,
   selectedShortAsset: null,
-  hedgeLongAssets: [],
-  hedgeShortAssets: [],
   setSelectedTheme: (theme) => set({ selectedTheme: theme }),
   setSelectedPair: (pair) => set({ selectedPair: pair }),
   setTradeType: (type) => set({ tradeType: type }),
-  setTradeMode: (mode) => set({ tradeMode: mode }),
   setOrderType: (type) => set({ orderType: type }),
   setAmount: (amount) => set({ amount }),
   setSide: (side) => set({ side }),
   setSelectedLongAsset: (asset) => set({ selectedLongAsset: asset }),
   setSelectedShortAsset: (asset) => set({ selectedShortAsset: asset }),
-  // Hedge asset management
-  addHedgeLongAsset: (asset) => set((state) => {
-    if (state.hedgeLongAssets.length >= 4) return state;
-    if (state.hedgeLongAssets.find(a => a.symbol === asset.symbol)) return state;
-    return { hedgeLongAssets: [...state.hedgeLongAssets, asset] };
-  }),
-  removeHedgeLongAsset: (symbol) => set((state) => ({
-    hedgeLongAssets: state.hedgeLongAssets.filter(a => a.symbol !== symbol)
-  })),
-  updateHedgeLongAssetWeight: (symbol, weight) => set((state) => ({
-    hedgeLongAssets: state.hedgeLongAssets.map(a => 
-      a.symbol === symbol ? { ...a, weight: Math.max(1, Math.min(99, weight)) } : a
-    )
-  })),
-  addHedgeShortAsset: (asset) => set((state) => {
-    if (state.hedgeShortAssets.length >= 4) return state;
-    if (state.hedgeShortAssets.find(a => a.symbol === asset.symbol)) return state;
-    return { hedgeShortAssets: [...state.hedgeShortAssets, asset] };
-  }),
-  removeHedgeShortAsset: (symbol) => set((state) => ({
-    hedgeShortAssets: state.hedgeShortAssets.filter(a => a.symbol !== symbol)
-  })),
-  updateHedgeShortAssetWeight: (symbol, weight) => set((state) => ({
-    hedgeShortAssets: state.hedgeShortAssets.map(a => 
-      a.symbol === symbol ? { ...a, weight: Math.max(1, Math.min(99, weight)) } : a
-    )
-  })),
-  clearHedgeAssets: () => set({ hedgeLongAssets: [], hedgeShortAssets: [] }),
 }));
 
 // Learn Store
@@ -203,18 +142,83 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   clearChat: () => set({ messages: [], screenshotUri: null }),
 }));
 
-// User Store
-interface UserStore {
-  userId: string | null;
-  username: string | null;
-  setUser: (userId: string, username: string) => void;
-  clearUser: () => void;
+// Wallet Store
+const WALLET_ADDRESS_KEY = '@wallet_address';
+
+interface WalletState {
+  walletAddress: string | null;
+  isConnected: boolean;
+  connect: (address: string) => Promise<void>;
+  disconnect: () => Promise<void>;
+  initialize: () => Promise<void>;
 }
 
-export const useUserStore = create<UserStore>((set) => ({
-  userId: null,
-  username: null,
-  setUser: (userId: string, username: string) => set({ userId, username }),
-  clearUser: () => set({ userId: null, username: null }),
-}));
+const isValidEthAddress = (address: string): boolean => {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+};
 
+export const useWalletStore = create<WalletState>((set) => ({
+  walletAddress: null,
+  isConnected: false,
+  
+  connect: async (address: string) => {
+    // Validate address format
+    const trimmedAddress = address.trim();
+    if (!isValidEthAddress(trimmedAddress)) {
+      throw new Error('Invalid wallet address format. Please enter a valid Ethereum address (0x...)');
+    }
+    
+    try {
+      // Store in AsyncStorage for persistence
+      await AsyncStorage.setItem(WALLET_ADDRESS_KEY, trimmedAddress);
+      
+      // Update state
+      set({ 
+        walletAddress: trimmedAddress,
+        isConnected: true 
+      });
+      
+      console.log('✅ Wallet connected:', trimmedAddress);
+    } catch (error) {
+      console.error('Failed to save wallet address:', error);
+      throw new Error('Failed to save wallet address');
+    }
+  },
+  
+  disconnect: async () => {
+    try {
+      // Clear from AsyncStorage
+      await AsyncStorage.removeItem(WALLET_ADDRESS_KEY);
+      
+      // Reset state
+      set({ 
+        walletAddress: null,
+        isConnected: false 
+      });
+      
+      console.log('✅ Wallet disconnected');
+    } catch (error) {
+      console.error('Failed to disconnect wallet:', error);
+      throw new Error('Failed to disconnect wallet');
+    }
+  },
+  
+  initialize: async () => {
+    try {
+      // Load from AsyncStorage on app start
+      const savedAddress = await AsyncStorage.getItem(WALLET_ADDRESS_KEY);
+      
+      if (savedAddress && isValidEthAddress(savedAddress)) {
+        set({ 
+          walletAddress: savedAddress,
+          isConnected: true 
+        });
+        console.log('✅ Wallet restored from storage:', savedAddress);
+      } else {
+        console.log('ℹ️ No saved wallet found');
+      }
+    } catch (error) {
+      console.error('Failed to initialize wallet:', error);
+    }
+  },
+}));
