@@ -512,7 +512,14 @@ const CommunityScreenContent: React.FC = () => {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Community</Text>
+            <View style={styles.headerTitleContainer}>
+              <Avatar
+                userId="3"
+                username="TechBull"
+                size={32}
+              />
+              <Text style={styles.title}>Hey, @TechBull </Text>
+            </View>
             <Pressable
               onPress={() => {
                 console.log('QR BUTTON PRESSED!');
@@ -527,9 +534,6 @@ const CommunityScreenContent: React.FC = () => {
 
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>
-            Hey, @TechBull
-          </Text>
           <View style={styles.greetingStats}>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>🔥</Text>
@@ -1193,9 +1197,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
   },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingLeft: theme.spacing.md,
+  },
   greetingSection: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     marginBottom: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
