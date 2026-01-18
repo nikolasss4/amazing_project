@@ -17,11 +17,11 @@ import { GlassPanel } from '@ui/primitives/GlassPanel';
 import { GlowingBorder } from '@ui/primitives/GlowingBorder';
 import { Button } from '@ui/primitives/Button';
 import { theme } from '@app/theme';
-import { useTradeStore, useWalletStore } from '@app/store';
-import { mockTradePairs, mockThemes, availableAssets, basketThemes, AvailableAsset } from '../models';
+import { useTradeStore } from '@app/store';
+import { mockTradePairs, mockThemes, basketThemes } from '../models';
 import { TradingViewChart } from '../components/TradingViewChart';
 import { TradeService } from '../services/TradeService';
-import { runConnectionTests, getAPIConfig } from '../../wallet/services/testConnection';
+import { AssetService, Instrument } from '../services/AssetService';
 
 const QUICK_AMOUNTS = [10, 50, 100, 500];
 
@@ -51,52 +51,10 @@ export const TradeScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssetSelector, setShowAssetSelector] = useState<'long' | 'short' | null>(null);
-  const [showWalletModal, setShowWalletModal] = useState(false);
-  const [walletInputAddress, setWalletInputAddress] = useState('');
-  const [walletError, setWalletError] = useState<string | null>(null);
-
-  // Wallet state
-  const { isConnected, walletAddress, isConnecting, connect, disconnect, initialize } = useWalletStore();
-
-  // Initialize wallet on mount
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
-
-  // Format wallet address for display
-  const formatAddress = (address: string | null): string => {
-    if (!address) return '';
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-  };
-
-  // Handle wallet connection
-  const handleConnectWallet = async () => {
-    setWalletError(null);
-    try {
-      await connect(walletInputAddress);
-      setWalletInputAddress('');
-      setShowWalletModal(false);
-    } catch (error) {
-      setWalletError(error instanceof Error ? error.message : 'Failed to connect wallet');
-    }
-  };
-
-  // Handle wallet disconnection
-  const handleDisconnectWallet = async () => {
-    try {
-      await disconnect();
-      setShowWalletModal(false);
-    } catch (error) {
-      console.error('Failed to disconnect:', error);
-    }
-  };
-
-  // DEBUG: Test API connection
-  const handleTestConnection = async () => {
-    console.log('🧪 TEST CONNECTION BUTTON PRESSED');
-    getAPIConfig();
-    await runConnectionTests();
-  };
+  const [availableAssets, setAvailableAssets] = useState<Instrument[]>([]);
+  const [isLoadingAssets, setIsLoadingAssets] = useState(true); // Start as loading
+  const [singleAssets, setSingleAssets] = useState<Instrument[]>([]);
+  const [showGraphs, setShowGraphs] = useState(false); // Graphs collapsed by default
 
   const handlePlaceTrade = async () => {
     if (!canPlaceTrade() || isSubmitting) return;
@@ -223,6 +181,114 @@ export const TradeScreen: React.FC = () => {
     }
     return 'BTCUSD';
   };
+
+  /**
+   * Generate a trading signal/advice based on the selected assets
+   * This is hardcoded for now but should make sense with the graph data
+   */
+  const getTradingSignal = (): { signal: 'bullish' | 'bearish' | 'neutral'; title: string; message: string; reasoning: string } => {
+    if (tradeType === 'pair' && selectedLongAsset && selectedShortAsset) {
+      // Pair trade signal
+      return {
+        signal: 'bullish',
+        title: 'Pair Trade Opportunity',
+        message: `Consider going long on ${selectedLongAsset} vs short on ${selectedShortAsset}`,
+        reasoning: `${selectedLongAsset} shows stronger momentum relative to ${selectedShortAsset} based on recent price action. This pair trade allows you to profit from the relative performance difference while reducing overall market exposure.`,
+      };
+    }
+    
+    if (tradeType === 'basket' && selectedTheme) {
+      // Basket trade signal
+      const direction = side === 'long' ? 'upward' : 'downward';
+      return {
+        signal: side === 'long' ? 'bullish' : 'bearish',
+        title: `${selectedTheme.name} Basket ${side === 'long' ? 'Long' : 'Short'}`,
+        message: `The ${selectedTheme.name} basket shows ${direction} momentum`,
+        reasoning: `The ${selectedTheme.name} basket (${selectedTheme.tokens.join(', ')}) is showing ${direction} trends. ${side === 'long' ? 'Going long' : 'Shorting'} this basket allows you to trade the entire theme rather than individual tokens, providing diversification within the theme.`,
+      };
+    }
+    
+    if (tradeType === 'single' && selectedPair) {
+      // Single token signal
+      const change = selectedPair.change24h || 0;
+      const isPositive = change >= 0;
+      return {
+        signal: side === 'long' ? (isPositive ? 'bullish' : 'neutral') : (isPositive ? 'neutral' : 'bearish'),
+        title: `${selectedPair.displayName} ${side === 'long' ? 'Long' : 'Short'}`,
+        message: `${selectedPair.displayName} is ${isPositive ? 'up' : 'down'} ${Math.abs(change).toFixed(2)}% in the last 24h`,
+        reasoning: side === 'long' 
+          ? `Going long on ${selectedPair.displayName} allows you to profit if the price continues to rise. ${isPositive ? 'Recent positive momentum suggests potential continuation.' : 'Consider waiting for a better entry point or use a limit order.'}`
+          : `Shorting ${selectedPair.displayName} allows you to profit if the price falls. ${!isPositive ? 'Recent negative momentum suggests potential continuation.' : 'Be cautious as the asset is currently showing positive momentum.'}`,
+      };
+    }
+    
+    // Default neutral signal
+    return {
+      signal: 'neutral',
+      title: 'Select Assets to Trade',
+      message: 'Choose your trading pair, basket, or single token to see trading advice',
+      reasoning: 'Once you select assets, we\'ll provide personalized trading signals based on current market conditions.',
+    };
+  };
+
+  // Reset graph visibility when selections change
+  useEffect(() => {
+    setShowGraphs(false);
+  }, [tradeType, selectedLongAsset, selectedShortAsset, selectedTheme, selectedPair, side]);
+
+  // Fetch assets based on trade type
+  useEffect(() => {
+    const fetchAssets = async () => {
+      setIsLoadingAssets(true);
+      try {
+        let assets: Instrument[] = [];
+        
+        if (tradeType === 'pair' || tradeType === 'basket') {
+          // Fetch from Pear for pairs and baskets
+          assets = await AssetService.getPearAssets();
+          setAvailableAssets(assets);
+          console.log(`✅ Loaded ${assets.length} Pear assets for ${tradeType}`);
+        } else if (tradeType === 'single') {
+          // Fetch from Hyperliquid for single
+          assets = await AssetService.getHyperliquidAssets();
+          setSingleAssets(assets);
+          // Also update availableAssets for the selector
+          setAvailableAssets(assets);
+          console.log(`✅ Loaded ${assets.length} Hyperliquid assets for single trading`);
+        }
+        
+        // Ensure we always have assets
+        if (assets.length === 0) {
+          console.warn('No assets loaded, using fallback');
+          if (tradeType === 'pair' || tradeType === 'basket') {
+            const fallback = await AssetService.getPearAssets();
+            setAvailableAssets(fallback);
+          } else {
+            const fallback = await AssetService.getHyperliquidAssets();
+            setAvailableAssets(fallback);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching assets:', error);
+        // Ensure we have fallback assets
+        try {
+          if (tradeType === 'pair' || tradeType === 'basket') {
+            const fallback = await AssetService.getPearAssets();
+            setAvailableAssets(fallback);
+          } else {
+            const fallback = await AssetService.getHyperliquidAssets();
+            setAvailableAssets(fallback);
+          }
+        } catch (fallbackError) {
+          console.error('Even fallback failed:', fallbackError);
+        }
+      } finally {
+        setIsLoadingAssets(false);
+      }
+    };
+
+    fetchAssets();
+  }, [tradeType]);
 
   /**
    * Convert API error messages to user-friendly messages
@@ -456,7 +522,10 @@ export const TradeScreen: React.FC = () => {
                     <Text style={styles.assetSelectorSubtitle}>Token you think will rise</Text>
                   </View>
                   <Pressable
-                    onPress={() => setShowAssetSelector('long')}
+                    onPress={() => {
+                      console.log('Opening long asset selector, available assets:', availableAssets.length);
+                      setShowAssetSelector('long');
+                    }}
                     style={[
                       styles.assetButton,
                       selectedLongAsset ? styles.assetButtonSelected : null,
@@ -476,7 +545,10 @@ export const TradeScreen: React.FC = () => {
                     <Text style={styles.assetSelectorSubtitle}>Token you think will fall</Text>
                   </View>
                   <Pressable
-                    onPress={() => setShowAssetSelector('short')}
+                    onPress={() => {
+                      console.log('Opening short asset selector, available assets:', availableAssets.length);
+                      setShowAssetSelector('short');
+                    }}
                     style={[
                       styles.assetButton,
                       selectedShortAsset ? styles.assetButtonSelected : null,
@@ -491,47 +563,112 @@ export const TradeScreen: React.FC = () => {
               </View>
             </GlowingBorder>
 
-            {/* Charts when both assets are selected */}
-            {selectedLongAsset && selectedShortAsset && (
-              <GlowingBorder
-                style={styles.chartsContainer}
-                glowColor="rgba(255, 255, 255, 0.2)"
-                disabled={false}
-                glow={false}
-                spread={8}
-                proximity={0}
-                inactiveZone={0.7}
-                movementDuration={2000}
-                borderWidth={0.15}
-              >
-                <View style={styles.chartsContent}>
-                  <Text style={styles.chartsTitle}>Compare Performance</Text>
-                  <Text style={styles.chartsSubtitle}>
-                    Review both assets before placing your trade
-                  </Text>
-                  <View style={styles.chartsRow}>
-                    <View style={styles.chartWrapper}>
-                      <View style={styles.chartHeader}>
-                        <Text style={styles.chartLabel}>Long: {selectedLongAsset}</Text>
-                        <Text style={styles.chartLabelSubtext}>Going Up</Text>
+            {/* Trading Signal and Charts when both assets are selected */}
+            {selectedLongAsset && selectedShortAsset && (() => {
+              const signal = getTradingSignal();
+              return (
+                <>
+                  {/* Trading Signal */}
+                  <GlowingBorder
+                    style={styles.signalContainer}
+                    glowColor={
+                      signal.signal === 'bullish' 
+                        ? 'rgba(34, 197, 94, 0.3)' 
+                        : signal.signal === 'bearish'
+                        ? 'rgba(239, 68, 68, 0.3)'
+                        : 'rgba(255, 255, 255, 0.2)'
+                    }
+                    disabled={false}
+                    glow={false}
+                    spread={8}
+                    proximity={0}
+                    inactiveZone={0.7}
+                    movementDuration={2000}
+                    borderWidth={0.15}
+                  >
+                    <View style={styles.signalContent}>
+                      <View style={styles.signalHeader}>
+                        <View style={styles.signalIconContainer}>
+                          <Ionicons
+                            name={signal.signal === 'bullish' ? 'trending-up' : signal.signal === 'bearish' ? 'trending-down' : 'analytics-outline'}
+                            size={24}
+                            color={
+                              signal.signal === 'bullish'
+                                ? theme.colors.success
+                                : signal.signal === 'bearish'
+                                ? theme.colors.error
+                                : 'rgba(255, 255, 255, 0.7)'
+                            }
+                          />
+                        </View>
+                        <View style={styles.signalTextContainer}>
+                          <Text style={styles.signalTitle}>{signal.title}</Text>
+                          <Text style={styles.signalMessage}>{signal.message}</Text>
+                        </View>
                       </View>
-                      <View style={styles.chartContainer}>
-                        <TradingViewChart symbol={getSelectedSymbol(selectedLongAsset)} interval="D" />
+                      <View style={styles.signalReasoning}>
+                        <Text style={styles.signalReasoningText}>{signal.reasoning}</Text>
                       </View>
+                      <TouchableOpacity
+                        onPress={() => setShowGraphs(!showGraphs)}
+                        style={styles.seeGraphsButton}
+                      >
+                        <Ionicons
+                          name={showGraphs ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color="#FF6B35"
+                        />
+                        <Text style={styles.seeGraphsButtonText}>
+                          {showGraphs ? 'Hide Graphs' : 'See Graphs'}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
-                    <View style={styles.chartWrapper}>
-                      <View style={styles.chartHeader}>
-                        <Text style={styles.chartLabel}>Short: {selectedShortAsset}</Text>
-                        <Text style={styles.chartLabelSubtext}>Going Down</Text>
+                  </GlowingBorder>
+
+                  {/* Charts - Only shown when showGraphs is true */}
+                  {showGraphs && (
+                    <GlowingBorder
+                      style={styles.chartsContainer}
+                      glowColor="rgba(255, 255, 255, 0.2)"
+                      disabled={false}
+                      glow={false}
+                      spread={8}
+                      proximity={0}
+                      inactiveZone={0.7}
+                      movementDuration={2000}
+                      borderWidth={0.15}
+                    >
+                      <View style={styles.chartsContent}>
+                        <Text style={styles.chartsTitle}>Compare Performance</Text>
+                        <Text style={styles.chartsSubtitle}>
+                          Review both assets before placing your trade
+                        </Text>
+                        <View style={styles.chartsRow}>
+                          <View style={styles.chartWrapper}>
+                            <View style={styles.chartHeader}>
+                              <Text style={styles.chartLabel}>Long: {selectedLongAsset}</Text>
+                              <Text style={styles.chartLabelSubtext}>Going Up</Text>
+                            </View>
+                            <View style={styles.chartContainer}>
+                              <TradingViewChart symbol={getSelectedSymbol(selectedLongAsset)} interval="D" />
+                            </View>
+                          </View>
+                          <View style={styles.chartWrapper}>
+                            <View style={styles.chartHeader}>
+                              <Text style={styles.chartLabel}>Short: {selectedShortAsset}</Text>
+                              <Text style={styles.chartLabelSubtext}>Going Down</Text>
+                            </View>
+                            <View style={styles.chartContainer}>
+                              <TradingViewChart symbol={getSelectedSymbol(selectedShortAsset)} interval="D" />
+                            </View>
+                          </View>
+                        </View>
                       </View>
-                      <View style={styles.chartContainer}>
-                        <TradingViewChart symbol={getSelectedSymbol(selectedShortAsset)} interval="D" />
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </GlowingBorder>
-            )}
+                    </GlowingBorder>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
 
@@ -619,43 +756,90 @@ export const TradeScreen: React.FC = () => {
               <Text style={styles.sectionHint}>
                 Trade a single token going up or down
               </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.pairList}
-            >
-              {mockTradePairs.map((pair) => (
-                <Pressable
-                  key={pair.symbol}
-                  onPress={() => setSelectedPair(pair)}
-                  style={[
-                    styles.pairChip,
-                    selectedPair?.symbol === pair.symbol && styles.pairChipActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.pairChipText,
-                      selectedPair?.symbol === pair.symbol && styles.pairChipTextActive,
-                    ]}
-                  >
-                    {pair.displayName}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.pairChipChange,
-                      {
-                        color:
-                          pair.change24h >= 0 ? theme.colors.bullish : theme.colors.bearish,
-                      },
-                    ]}
-                  >
-                    {pair.change24h >= 0 ? '+' : ''}
-                    {pair.change24h}%
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+            {isLoadingAssets ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Loading tokens...</Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.pairList}
+              >
+                {singleAssets.length > 0 ? (
+                  singleAssets.map((asset) => (
+                    <Pressable
+                      key={asset.symbol}
+                      onPress={() => setSelectedPair({
+                        symbol: `${asset.symbol}USD`,
+                        displayName: `${asset.symbol}/USD`,
+                        currentPrice: asset.currentPrice || 0,
+                        change24h: asset.change24h || 0,
+                      })}
+                      style={[
+                        styles.pairChip,
+                        selectedPair?.symbol === `${asset.symbol}USD` && styles.pairChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.pairChipText,
+                          selectedPair?.symbol === `${asset.symbol}USD` && styles.pairChipTextActive,
+                        ]}
+                      >
+                        {asset.symbol}/USD
+                      </Text>
+                      {asset.change24h !== undefined && (
+                        <Text
+                          style={[
+                            styles.pairChange,
+                            {
+                              color:
+                                asset.change24h >= 0 ? theme.colors.bullish : theme.colors.bearish,
+                            },
+                          ]}
+                        >
+                          {asset.change24h >= 0 ? '+' : ''}
+                          {asset.change24h}%
+                        </Text>
+                      )}
+                    </Pressable>
+                  ))
+                ) : (
+                  mockTradePairs.map((pair) => (
+                    <Pressable
+                      key={pair.symbol}
+                      onPress={() => setSelectedPair(pair)}
+                      style={[
+                        styles.pairChip,
+                        selectedPair?.symbol === pair.symbol && styles.pairChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.pairChipText,
+                          selectedPair?.symbol === pair.symbol && styles.pairChipTextActive,
+                        ]}
+                      >
+                        {pair.displayName}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.pairChange,
+                          {
+                            color:
+                              pair.change24h >= 0 ? theme.colors.bullish : theme.colors.bearish,
+                          },
+                        ]}
+                      >
+                        {pair.change24h >= 0 ? '+' : ''}
+                        {pair.change24h}%
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+            )}
             </View>
           </GlowingBorder>
         )}
@@ -668,6 +852,186 @@ export const TradeScreen: React.FC = () => {
             <Text style={styles.descriptionText}>{getTradeDescription()}</Text>
           </View>
         )}
+
+        {/* Trading Signal and Chart for Single Token */}
+        {tradeType === 'single' && selectedPair && (() => {
+          const signal = getTradingSignal();
+          return (
+            <>
+              {/* Trading Signal */}
+              <GlowingBorder
+                style={styles.signalContainer}
+                glowColor={
+                  signal.signal === 'bullish' 
+                    ? 'rgba(34, 197, 94, 0.3)' 
+                    : signal.signal === 'bearish'
+                    ? 'rgba(239, 68, 68, 0.3)'
+                    : 'rgba(255, 255, 255, 0.2)'
+                }
+                disabled={false}
+                glow={false}
+                spread={8}
+                proximity={0}
+                inactiveZone={0.7}
+                movementDuration={2000}
+                borderWidth={0.15}
+              >
+                <View style={styles.signalContent}>
+                  <View style={styles.signalHeader}>
+                    <View style={styles.signalIconContainer}>
+                      <Ionicons
+                        name={signal.signal === 'bullish' ? 'trending-up' : signal.signal === 'bearish' ? 'trending-down' : 'analytics-outline'}
+                        size={24}
+                        color={
+                          signal.signal === 'bullish'
+                            ? theme.colors.success
+                            : signal.signal === 'bearish'
+                            ? theme.colors.error
+                            : 'rgba(255, 255, 255, 0.7)'
+                        }
+                      />
+                    </View>
+                    <View style={styles.signalTextContainer}>
+                      <Text style={styles.signalTitle}>{signal.title}</Text>
+                      <Text style={styles.signalMessage}>{signal.message}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.signalReasoning}>
+                    <Text style={styles.signalReasoningText}>{signal.reasoning}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setShowGraphs(!showGraphs)}
+                    style={styles.seeGraphsButton}
+                  >
+                    <Ionicons
+                      name={showGraphs ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color="#FF6B35"
+                    />
+                    <Text style={styles.seeGraphsButtonText}>
+                      {showGraphs ? 'Hide Graph' : 'See Graph'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </GlowingBorder>
+
+              {/* Chart - Only shown when showGraphs is true */}
+              {showGraphs && (
+                <GlowingBorder
+                  style={styles.chartsContainer}
+                  glowColor="rgba(255, 255, 255, 0.2)"
+                  disabled={false}
+                  glow={false}
+                  spread={8}
+                  proximity={0}
+                  inactiveZone={0.7}
+                  movementDuration={2000}
+                  borderWidth={0.15}
+                >
+                  <View style={styles.chartsContent}>
+                    <Text style={styles.chartsTitle}>Price Chart</Text>
+                    <Text style={styles.chartsSubtitle}>
+                      Review the asset before placing your trade
+                    </Text>
+                    <View style={styles.chartContainer}>
+                      <TradingViewChart symbol={getSelectedSymbol()} interval="D" />
+                    </View>
+                  </View>
+                </GlowingBorder>
+              )}
+            </>
+          );
+        })()}
+
+        {/* Trading Signal and Chart for Basket */}
+        {tradeType === 'basket' && selectedTheme && (() => {
+          const signal = getTradingSignal();
+          return (
+            <>
+              {/* Trading Signal */}
+              <GlowingBorder
+                style={styles.signalContainer}
+                glowColor={
+                  signal.signal === 'bullish' 
+                    ? 'rgba(34, 197, 94, 0.3)' 
+                    : signal.signal === 'bearish'
+                    ? 'rgba(239, 68, 68, 0.3)'
+                    : 'rgba(255, 255, 255, 0.2)'
+                }
+                disabled={false}
+                glow={false}
+                spread={8}
+                proximity={0}
+                inactiveZone={0.7}
+                movementDuration={2000}
+                borderWidth={0.15}
+              >
+                <View style={styles.signalContent}>
+                  <View style={styles.signalHeader}>
+                    <View style={styles.signalIconContainer}>
+                      <Ionicons
+                        name={signal.signal === 'bullish' ? 'trending-up' : signal.signal === 'bearish' ? 'trending-down' : 'analytics-outline'}
+                        size={24}
+                        color={
+                          signal.signal === 'bullish'
+                            ? theme.colors.success
+                            : signal.signal === 'bearish'
+                            ? theme.colors.error
+                            : 'rgba(255, 255, 255, 0.7)'
+                        }
+                      />
+                    </View>
+                    <View style={styles.signalTextContainer}>
+                      <Text style={styles.signalTitle}>{signal.title}</Text>
+                      <Text style={styles.signalMessage}>{signal.message}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.signalReasoning}>
+                    <Text style={styles.signalReasoningText}>{signal.reasoning}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setShowGraphs(!showGraphs)}
+                    style={styles.seeGraphsButton}
+                  >
+                    <Ionicons
+                      name={showGraphs ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color="#FF6B35"
+                    />
+                    <Text style={styles.seeGraphsButtonText}>
+                      {showGraphs ? 'Hide Graph' : 'See Graph'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </GlowingBorder>
+
+              {/* Chart - Only shown when showGraphs is true */}
+              {showGraphs && (
+                <GlowingBorder
+                  style={styles.chartsContainer}
+                  glowColor="rgba(255, 255, 255, 0.2)"
+                  disabled={false}
+                  glow={false}
+                  spread={8}
+                  proximity={0}
+                  inactiveZone={0.7}
+                  movementDuration={2000}
+                  borderWidth={0.15}
+                >
+                  <View style={styles.chartsContent}>
+                    <Text style={styles.chartsTitle}>Basket Performance</Text>
+                    <Text style={styles.chartsSubtitle}>
+                      {selectedTheme.tokens.join(', ')}
+                    </Text>
+                    <View style={styles.chartContainer}>
+                      <TradingViewChart symbol={getSelectedSymbol(selectedTheme.tokens[0])} interval="D" />
+                    </View>
+                  </View>
+                </GlowingBorder>
+              )}
+            </>
+          );
+        })()}
 
         {/* Trade Ticket */}
         <GlowingBorder
@@ -851,66 +1215,108 @@ export const TradeScreen: React.FC = () => {
       </Modal>
 
       {/* Asset Selector Modal */}
-      <Modal visible={showAssetSelector !== null} transparent animationType="slide">
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setShowAssetSelector(null)}
-        >
-          <Animated.View entering={FadeIn} exiting={FadeOut}>
-            <GlassPanel style={styles.assetModal} onStartShouldSetResponder={() => true}>
-              <View style={styles.assetModalHeader}>
-                <Text style={styles.assetModalTitle}>
-                  Select {showAssetSelector === 'long' ? 'Long' : 'Short'} Asset
-                </Text>
-                <Pressable onPress={() => setShowAssetSelector(null)}>
-                  <Ionicons name="close" size={24} color="#FFFFFF" />
-                </Pressable>
-              </View>
-              <ScrollView style={styles.assetList}>
-                {availableAssets.map((asset) => (
-                  <Pressable
-                    key={asset.symbol}
-                    onPress={() => {
-                      if (showAssetSelector === 'long') {
-                        setSelectedLongAsset(asset.symbol);
-                      } else {
-                        setSelectedShortAsset(asset.symbol);
-                      }
-                      setShowAssetSelector(null);
-                    }}
-                    style={[
-                      styles.assetItem,
-                      ((showAssetSelector === 'long' && selectedLongAsset === asset.symbol) ||
-                       (showAssetSelector === 'short' && selectedShortAsset === asset.symbol)) &&
-                        styles.assetItemSelected,
-                    ]}
-                  >
-                    <View style={styles.assetItemContent}>
-                      <Text style={styles.assetItemSymbol}>{asset.symbol}</Text>
-                      <Text style={styles.assetItemName}>{asset.displayName}</Text>
-                    </View>
-                    {asset.change24h !== undefined && (
-                      <Text
-                        style={[
-                          styles.assetItemChange,
-                          {
-                            color:
-                              asset.change24h >= 0
-                                ? theme.colors.bullish
-                                : theme.colors.bearish,
-                          },
-                        ]}
-                      >
-                        {asset.change24h >= 0 ? '+' : ''}
-                        {asset.change24h}%
-                      </Text>
-                    )}
+      <Modal 
+        visible={showAssetSelector !== null} 
+        transparent 
+        animationType="slide"
+        onRequestClose={() => setShowAssetSelector(null)}
+        statusBarTranslucent
+      >
+        <SafeAreaView style={styles.modalOverlay} edges={['top', 'bottom']}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setShowAssetSelector(null)}
+          />
+          <Animated.View 
+            entering={FadeIn} 
+            exiting={FadeOut} 
+            style={styles.modalContent}
+            onStartShouldSetResponder={() => true}
+          >
+            <GlowingBorder
+              style={styles.assetModal}
+              glowColor="rgba(255, 255, 255, 0.2)"
+              disabled={false}
+              glow={false}
+              spread={8}
+              proximity={0}
+              inactiveZone={0.7}
+              movementDuration={2000}
+              borderWidth={0.15}
+            >
+              <View style={styles.assetModalInner}>
+                <View style={styles.assetModalHeader}>
+                  <Text style={styles.assetModalTitle}>
+                    Select {showAssetSelector === 'long' ? 'Long' : 'Short'} Asset
+                  </Text>
+                  <Pressable onPress={() => setShowAssetSelector(null)}>
+                    <Ionicons name="close" size={24} color="#FFFFFF" />
                   </Pressable>
-                ))}
-              </ScrollView>
-            </GlassPanel>
+                </View>
+                {isLoadingAssets ? (
+                  <View style={styles.loadingContainer}>
+                    <Text style={styles.loadingText}>Loading assets...</Text>
+                  </View>
+                ) : (
+                  <ScrollView 
+                    style={styles.assetList} 
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.assetListContent}
+                  >
+                    {availableAssets.length === 0 ? (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>No assets available</Text>
+                        <Text style={styles.emptySubtext}>Check console for details</Text>
+                      </View>
+                    ) : (
+                      availableAssets.map((asset) => (
+                        <Pressable
+                          key={asset.symbol}
+                          onPress={() => {
+                            console.log('Selected asset:', asset.symbol);
+                            if (showAssetSelector === 'long') {
+                              setSelectedLongAsset(asset.symbol);
+                            } else {
+                              setSelectedShortAsset(asset.symbol);
+                            }
+                            setShowAssetSelector(null);
+                          }}
+                          style={[
+                            styles.assetItem,
+                            ((showAssetSelector === 'long' && selectedLongAsset === asset.symbol) ||
+                             (showAssetSelector === 'short' && selectedShortAsset === asset.symbol)) &&
+                              styles.assetItemSelected,
+                          ]}
+                        >
+                          <View style={styles.assetItemContent}>
+                            <Text style={styles.assetItemSymbol}>{asset.symbol}</Text>
+                            <Text style={styles.assetItemName}>{asset.name || asset.displayName || asset.symbol}</Text>
+                          </View>
+                          {asset.change24h !== undefined && (
+                            <Text
+                              style={[
+                                styles.assetItemChange,
+                                {
+                                  color:
+                                    asset.change24h >= 0
+                                      ? theme.colors.bullish
+                                      : theme.colors.bearish,
+                                },
+                              ]}
+                            >
+                              {asset.change24h >= 0 ? '+' : ''}
+                              {asset.change24h}%
+                            </Text>
+                          )}
+                        </Pressable>
+                      ))
+                    )}
+                  </ScrollView>
+                )}
+              </View>
+            </GlowingBorder>
           </Animated.View>
-        </Pressable>
+        </SafeAreaView>
       </Modal>
 
       {/* Wallet Modal */}
@@ -1188,15 +1594,20 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.5)',
   },
   chartContainer: {
-    height: 180,
+    height: 300,
     borderRadius: theme.borderRadius.md,
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
   assetModal: {
-    width: '90%',
+    padding: 2,
+    borderRadius: theme.borderRadius.lg,
     maxHeight: '80%',
+  },
+  assetModalInner: {
     padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg - 2,
+    backgroundColor: 'rgba(8, 8, 12, 0.95)',
   },
   assetModalHeader: {
     flexDirection: 'row',
@@ -1210,7 +1621,33 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   assetList: {
-    maxHeight: 400,
+    maxHeight: 500,
+  },
+  assetListContent: {
+    paddingBottom: theme.spacing.md,
+  },
+  emptySubtext: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.3)',
+    marginTop: theme.spacing.xs,
+  },
+  loadingContainer: {
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: theme.typography.sizes.md,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  emptyContainer: {
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: theme.typography.sizes.md,
+    color: 'rgba(255, 255, 255, 0.5)',
   },
   assetItem: {
     flexDirection: 'row',
@@ -1547,7 +1984,16 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.overlayStrong,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: theme.spacing.lg,
+    zIndex: 1000,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  modalContent: {
+    width: '90%',
+    maxHeight: '80%',
+    zIndex: 2,
   },
   successModal: {
     alignItems: 'center',
@@ -1606,114 +2052,69 @@ const styles = StyleSheet.create({
     lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.md,
     marginBottom: theme.spacing.lg,
   },
-  walletModal: {
-    minWidth: 300,
-    maxWidth: '90%',
-    padding: theme.spacing.xl,
+  signalContainer: {
+    padding: 2,
+    marginBottom: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
   },
-  walletModalHeader: {
+  signalContent: {
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg - 2,
+  },
+  signalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.xl,
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing.md,
   },
-  walletModalTitle: {
-    fontSize: theme.typography.sizes.xxl,
+  signalIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: theme.spacing.md,
+  },
+  signalTextContainer: {
+    flex: 1,
+  },
+  signalTitle: {
+    fontSize: theme.typography.sizes.lg,
     fontWeight: theme.typography.weights.bold,
     color: '#FFFFFF',
-  },
-  walletModalContent: {
-    gap: theme.spacing.lg,
-  },
-  walletConnectedBadge: {
-    alignItems: 'center',
-    marginBottom: theme.spacing.md,
-  },
-  walletConnectedLabel: {
-    fontSize: theme.typography.sizes.sm,
-    color: 'rgba(255, 255, 255, 0.6)',
-    textAlign: 'center',
     marginBottom: theme.spacing.xs,
   },
-  walletAddressBox: {
-    padding: theme.spacing.md,
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.3)',
-  },
-  walletAddressText: {
-    fontSize: theme.typography.sizes.sm,
-    fontWeight: theme.typography.weights.semibold,
-    color: '#4CAF50',
-    textAlign: 'center',
-  },
-  walletIconContainer: {
-    alignItems: 'center',
-    marginBottom: theme.spacing.md,
-  },
-  walletDescription: {
+  signalMessage: {
     fontSize: theme.typography.sizes.md,
-    color: 'rgba(255, 255, 255, 0.6)',
-    textAlign: 'center',
-    lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.md,
-  },
-  walletInputGroup: {
-    gap: theme.spacing.sm,
-  },
-  walletInputLabel: {
-    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: theme.typography.weights.medium,
-    color: '#FFFFFF',
   },
-  walletInput: {
+  signalReasoning: {
+    marginBottom: theme.spacing.md,
     padding: theme.spacing.md,
-    fontSize: theme.typography.sizes.md,
-    color: '#FFFFFF',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  walletInputHint: {
-    fontSize: theme.typography.sizes.xs,
-    color: 'rgba(255, 255, 255, 0.5)',
+  signalReasoningText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.sm,
   },
-  walletErrorBox: {
+  seeGraphsButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.sm,
-    padding: theme.spacing.md,
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
     borderRadius: theme.borderRadius.md,
-  },
-  walletErrorText: {
-    flex: 1,
-    fontSize: theme.typography.sizes.sm,
-    color: theme.colors.error,
-  },
-  walletLoadingBox: {
-    padding: theme.spacing.md,
     backgroundColor: 'rgba(255, 107, 53, 0.1)',
-    borderRadius: theme.borderRadius.md,
     borderWidth: 1,
     borderColor: 'rgba(255, 107, 53, 0.3)',
+    gap: theme.spacing.xs,
   },
-  walletLoadingText: {
+  seeGraphsButtonText: {
     fontSize: theme.typography.sizes.md,
     fontWeight: theme.typography.weights.semibold,
     color: '#FF6B35',
-    textAlign: 'center',
-    marginBottom: theme.spacing.xs,
-  },
-  walletLoadingSubtext: {
-    fontSize: theme.typography.sizes.sm,
-    color: 'rgba(255, 255, 255, 0.6)',
-    textAlign: 'center',
-  },
-  walletHint: {
-    fontSize: theme.typography.sizes.sm,
-    color: 'rgba(255, 255, 255, 0.5)',
-    textAlign: 'center',
   },
 });
