@@ -160,16 +160,10 @@ class CommunityServiceClass {
    */
   async getNarratives(userId: string, limit: number = 20): Promise<CommunityNarrative[]> {
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityService.ts:162',message:'getNarratives called',data:{userId,limit,url:`${COMMUNITY_API_BASE_URL}/narratives`},timestamp:Date.now(),sessionId:'debug-session',runId:'check-api-call',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       const response = await axios.get(`${COMMUNITY_API_BASE_URL}/narratives`, {
         headers: this.getHeaders(userId),
         params: { limit },
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3707a07d-55e2-4a58-b964-f5264964bf68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommunityService.ts:168',message:'API response received',data:{narrativesCount:response.data?.length||0,firstNarrativeTitle:response.data?.[0]?.title,firstReason:response.data?.[0]?.insights?.reason?.substring(0,60),hasGenericText:(response.data?.[0]?.insights?.reason||'').includes('Narrative formed from recent'),headlinesCount:response.data?.[0]?.insights?.headlines?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'check-api-call',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to get narratives');

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator, Platform, Modal, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -9,102 +9,309 @@ import Animated, {
   interpolate,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { GlassPanel } from '@ui/primitives/GlassPanel';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlowingBorder } from '@ui/primitives/GlowingBorder';
-import { Pill } from '@ui/components/Pill';
 import { theme } from '@app/theme';
 import * as Haptics from 'expo-haptics';
-import { useLearnStore } from '@app/store';
-import {
-  mockLeaderboard,
-  mockFriendsLeaderboard,
-  mockCelebrityPortfolios,
-  mockSocialPosts,
-  LeaderboardEntry,
-  CelebrityPortfolio,
-  SocialPost,
-} from '../models';
+import { useLearnStore, useUserStore } from '@app/store';
+import { LeaderboardEntry } from '../models';
 import { QRCodeModal } from '../components/QRCodeModal';
-import { Avatar } from '../components/Avatar';
+import { QRScannerModal } from '../components/QRScannerModal';
+import { CommunityService, MarketMessage } from '../services/CommunityService';
+import { CommunityNarrative, useNarratives } from '../hooks/useCommunityData';
+import { ErrorBoundary } from '@ui/components/ErrorBoundary';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
 
-// Deterministic shuffle function based on seed
-function seededShuffle<T>(array: T[], seed: string): T[] {
-  // Simple seeded random number generator
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    const char = seed.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+// Stub functions at module level to prevent errors from cached bundle code
+// These functions are being called from somewhere but don't exist in source
+const seededShuffleModule = (arr: any): any[] => {
+  if (!Array.isArray(arr)) {
+    console.warn('seededShuffle called with non-array:', arr);
+    return [];
   }
-  
-  const shuffled = [...array];
-  let random = Math.abs(hash);
-  
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    random = (random * 9301 + 49297) % 233280;
-    const j = Math.floor((random / 233280) * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  try {
+    return [...arr];
+  } catch (e) {
+    console.error('Error in seededShuffle:', e);
+    return [];
   }
-  
-  return shuffled;
+};
+
+const getShuffledLeaderboardModule = (entries: any): any[] => {
+  if (!Array.isArray(entries)) {
+    console.warn('getShuffledLeaderboard called with non-array:', entries);
+    return [];
+  }
+  try {
+    return seededShuffleModule(entries);
+  } catch (e) {
+    console.error('Error in getShuffledLeaderboard:', e);
+    return [];
+  }
+};
+
+// Make available globally for web (in case cached bundle code tries to access them)
+if (typeof window !== 'undefined') {
+  (window as any).seededShuffle = seededShuffleModule;
+  (window as any).getShuffledLeaderboard = getShuffledLeaderboardModule;
 }
 
-// Get shuffled leaderboard for a specific period
-function getShuffledLeaderboard(period: LeaderboardPeriod, baseData: LeaderboardEntry[]): LeaderboardEntry[] {
-  const shuffled = seededShuffle(baseData, `leaderboard-${period}`);
-  // Update ranks after shuffling
-  return shuffled.map((entry, index) => ({
-    ...entry,
-    rank: index + 1,
-  }));
-}
+// Wrapper component to catch any errors during render
+const CommunityScreenContent: React.FC = () => {
+  // Ensure stub functions are available immediately (before any hooks)
+  // This prevents errors from cached bundle code trying to call them
+  // Use useLayoutEffect to run synchronously before paint
+  useLayoutEffect(() => {
+    // Functions are already defined at module level, but ensure they're accessible
+    if (typeof window !== 'undefined') {
+      (window as any).seededShuffle = seededShuffleModule;
+      (window as any).getShuffledLeaderboard = getShuffledLeaderboardModule;
+    }
+  }, []);
 
-export const CommunityScreen: React.FC = () => {
-  const { streak: storeStreak, totalXP: storeTotalXP } = useLearnStore();
+  const ToastAndroid = Platform.OS === 'android' ? require('react-native').ToastAndroid : null;
+  const { streak, totalXP } = useLearnStore();
+  const { userId, username, setUser } = useUserStore();
+  
+  // Error state to catch any rendering errors
+  const [componentError, setComponentError] = useState<Error | null>(null);
+
+  // Catch errors in useEffect
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const errorHandler = (error: ErrorEvent) => {
+        console.error('CommunityScreen error:', error);
+        setComponentError(new Error(error.message || 'Unknown error'));
+      };
+      const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
+        console.error('CommunityScreen unhandled rejection:', event);
+        setComponentError(new Error(event.reason?.message || 'Unhandled promise rejection'));
+      };
+      window.addEventListener('error', errorHandler);
+      window.addEventListener('unhandledrejection', unhandledRejectionHandler);
+      return () => {
+        window.removeEventListener('error', errorHandler);
+        window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
+      };
+    }
+  }, []);
+
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
   const [isFlipped, setIsFlipped] = useState(false);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [activeSection, setActiveSection] = useState<CommunitySection>('leaderboard');
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [localNarratives, setLocalNarratives] = useState<CommunityNarrative[]>([]);
+  const [fadedNarratives, setFadedNarratives] = useState<Set<string>>(new Set());
+  const [lastNarrativesUpdatedAt, setLastNarrativesUpdatedAt] = useState<Date | null>(null);
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [sheetMode, setSheetMode] = useState<'crypto' | 'room' | null>(null);
+  const [sheetData, setSheetData] = useState<any>(null);
+  const [roomMessages, setRoomMessages] = useState<MarketMessage[]>([]);
+  const [roomLoading, setRoomLoading] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomInput, setRoomInput] = useState('');
+  const [roomMessageType, setRoomMessageType] = useState<'bull' | 'bear' | 'question' | 'insight' | 'source'>('insight');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
   const flipRotation = useSharedValue(0);
-  
-  // Mock username - in real app, get from user store
-  const username = 'TechBull';
-  // Use mock values if store values are 0, otherwise use store values
-  const streak = storeStreak > 0 ? storeStreak : 42;
-  const totalXP = storeTotalXP > 0 ? storeTotalXP : 1250;
 
-  // Get shuffled leaderboard data based on selected period
-  const currentLeaderboard = useMemo(
-    () => getShuffledLeaderboard(leaderboardPeriod, mockLeaderboard),
-    [leaderboardPeriod]
-  );
+  // Use module-level functions (defined above) to ensure they're always available
+  const seededShuffle = seededShuffleModule;
+  const getShuffledLeaderboard = getShuffledLeaderboardModule;
 
-  const currentFriendsLeaderboard = useMemo(
-    () => getShuffledLeaderboard(leaderboardPeriod, mockFriendsLeaderboard),
-    [leaderboardPeriod]
-  );
+  const {
+    data: narrativesData,
+    loading: narrativesLoading,
+    error: narrativesError,
+    refetch: refetchNarratives,
+  } = useNarratives(undefined, 10, 60000); // Always fetch, use default userId in hook
+
+  // Removed userId check - narratives are always fetched with default userId
+
+  // Safe leaderboard processing - ensure arrays are always valid
+  // Just return arrays directly - no shuffling needed
+  const safeGlobalLeaderboard = useMemo(() => {
+    try {
+      if (!Array.isArray(globalLeaderboard)) {
+        return [];
+      }
+      return globalLeaderboard;
+    } catch (error) {
+      console.error('Error processing global leaderboard:', error);
+      return [];
+    }
+  }, [globalLeaderboard]);
+
+  const safeFriendsLeaderboard = useMemo(() => {
+    try {
+      if (!Array.isArray(friendsLeaderboard)) {
+        return [];
+      }
+      return friendsLeaderboard;
+    } catch (error) {
+      console.error('Error processing friends leaderboard:', error);
+      return [];
+    }
+  }, [friendsLeaderboard]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchLeaderboards = async () => {
+      try {
+        setLeaderboardLoading(true);
+        setLeaderboardError(null);
+        const [global, friendsOnly] = await Promise.all([
+          CommunityService.getLeaderboard(userId, 'global', leaderboardPeriod),
+          CommunityService.getLeaderboard(userId, 'friends', leaderboardPeriod),
+        ]);
+        // Ensure entries is always an array to prevent "array is not iterable" errors
+        setGlobalLeaderboard(Array.isArray(global?.entries) ? global.entries : []);
+        setFriendsLeaderboard(Array.isArray(friendsOnly?.entries) ? friendsOnly.entries : []);
+      } catch (error: any) {
+        setLeaderboardError(error.message || 'Failed to load leaderboards');
+        // Set empty arrays on error to prevent rendering issues
+        setGlobalLeaderboard([]);
+        setFriendsLeaderboard([]);
+      } finally {
+        setLeaderboardLoading(false);
+      }
+    };
+
+    fetchLeaderboards();
+  }, [userId, leaderboardPeriod]);
+
+  useEffect(() => {
+    try {
+      // Always set narratives data - no userId check needed
+      // Ensure narrativesData is always an array to prevent "array is not iterable" errors
+      const safeNarrativesData = Array.isArray(narrativesData) ? narrativesData : [];
+      setLocalNarratives(safeNarrativesData);
+      if (!narrativesLoading && safeNarrativesData.length > 0) {
+        const latestUpdated = safeNarrativesData.reduce<Date | null>((latest, narrative) => {
+          try {
+            if (!narrative || !narrative.updated_at) return latest;
+            const updatedAt = new Date(narrative.updated_at);
+            if (isNaN(updatedAt.getTime())) return latest;
+            if (!latest || updatedAt > latest) {
+              return updatedAt;
+            }
+          } catch (e) {
+            console.warn('Error parsing narrative date:', e);
+          }
+          return latest;
+        }, null);
+        setLastNarrativesUpdatedAt(latestUpdated ?? new Date());
+      }
+    } catch (error) {
+      console.error('Error in narrativesData useEffect:', error);
+      setLocalNarratives([]);
+      setComponentError(error instanceof Error ? error : new Error('Failed to process narratives data'));
+    }
+  }, [narrativesData, narrativesLoading]);
+
+  const fadedStorageKey = userId ? `community_faded_narratives_${userId}` : null;
+
+  useEffect(() => {
+    if (!fadedStorageKey) return;
+    let isMounted = true;
+    const loadFaded = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(fadedStorageKey);
+        if (!stored || !isMounted) return;
+        const parsed = JSON.parse(stored) as string[];
+        if (Array.isArray(parsed)) {
+          setFadedNarratives(new Set(parsed));
+        }
+      } catch (error) {
+        console.warn('Failed to load faded narratives', error);
+      }
+    };
+    loadFaded();
+    return () => {
+      isMounted = false;
+    };
+  }, [fadedStorageKey]);
+
+  useEffect(() => {
+    if (!fadedStorageKey) return;
+    const storeFaded = async () => {
+      try {
+        await AsyncStorage.setItem(fadedStorageKey, JSON.stringify(Array.from(fadedNarratives)));
+      } catch (error) {
+        console.warn('Failed to persist faded narratives', error);
+      }
+    };
+    storeFaded();
+  }, [fadedNarratives, fadedStorageKey]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handlePeriodSelect = (period: LeaderboardPeriod) => {
     setLeaderboardPeriod(period);
-    setShowFilterMenu(false);
   };
 
   const handleFlip = () => {
-    // Safe haptic call - no-op on web
     if (Platform.OS !== 'web') {
-      try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } catch (error) {
-        // Silently fail if haptics are not available
-      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     const newIsFlipped = !isFlipped;
     setIsFlipped(newIsFlipped);
     flipRotation.value = withTiming(newIsFlipped ? 180 : 0, { duration: 600 });
+  };
+
+  const handleQRPress = () => {
+    // Haptics only work on native platforms
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    
+    // On web, Alert.alert with buttons doesn't work well, so use simple alerts
+    if (Platform.OS === 'web') {
+      const choice = window.confirm('Click OK to show your QR code, or Cancel to scan a QR code');
+      if (choice) {
+        setShowQRModal(true);
+      } else {
+        setShowQRScanner(true);
+      }
+    } else {
+      Alert.alert(
+        'Add Friends',
+        'Choose an option:',
+        [
+          {
+            text: 'Show My QR Code',
+            onPress: () => setShowQRModal(true),
+          },
+          {
+            text: 'Scan QR Code',
+            onPress: () => setShowQRScanner(true),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+    }
+  };
+
+  const handleFriendAdded = async (friendId: string, username: string) => {
+    setShowQRScanner(false);
+    Alert.alert('Success', `Added ${username} as a friend!`);
   };
 
   const frontAnimatedStyle = useAnimatedStyle(() => {
@@ -130,23 +337,235 @@ export const CommunityScreen: React.FC = () => {
     };
   });
 
-  const formatTimeAgo = (date: Date) => {
-    const hours = Math.floor((Date.now() - date.getTime()) / 3600000);
-    if (hours < 1) return 'Just now';
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+  const formatTimestamp = (timestamp: Date | null) => {
+    return timestamp ? timestamp.toLocaleString() : '—';
   };
 
-  const getSentimentColor = (sentiment: SocialPost['sentiment']) => {
-    switch (sentiment) {
-      case 'bullish':
-        return theme.colors.bullish;
-      case 'bearish':
-        return theme.colors.bearish;
-      default:
-        return theme.colors.neutral;
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android' && ToastAndroid) {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+      return;
+    }
+    setToastMessage(message);
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 2500);
+  };
+
+  const NON_CRYPTO_TICKERS = new Set(['BRK', 'BRKA', 'BRKB', 'BRK.A', 'BRK.B', 'MSFT', 'TSLA']);
+
+  const isCryptoAsset = (asset: string) => {
+    const normalized = asset.replace('$', '').trim().toUpperCase();
+    if (!normalized) return false;
+    return !NON_CRYPTO_TICKERS.has(normalized);
+  };
+
+  const getVelocitySnapshot = (narrative: CommunityNarrative) => {
+    try {
+      if (!narrative?.insights?.change) {
+        return { direction: '—', percent: 0 };
+      }
+      const { current = 0, previous = 0 } = narrative.insights.change;
+      const delta = current - previous;
+      const percent =
+        previous === 0 ? (current > 0 ? 100 : 0) : Math.round((delta / previous) * 100);
+      return {
+        direction: percent >= 0 ? '↑' : '↓',
+        percent: Math.abs(percent),
+      };
+    } catch (e) {
+      console.warn('Error calculating velocity snapshot:', e);
+      return { direction: '—', percent: 0 };
     }
   };
+
+  const getConfidenceLabel = (level: CommunityNarrative['insights']['confidence']['level']) => {
+    try {
+      if (!level || typeof level !== 'string') return 'Unknown';
+      return `${level[0].toUpperCase()}${level.slice(1)}`;
+    } catch (e) {
+      return 'Unknown';
+    }
+  };
+
+  const getWhyLine = (text: string) => {
+    const trimmed = text.replace(/\s+/g, ' ').trim();
+    if (trimmed.length <= 120) return trimmed;
+    return `${trimmed.slice(0, 117)}...`;
+  };
+
+  const updateNarrative = (narrativeId: string, updater: (narrative: CommunityNarrative) => CommunityNarrative) => {
+    setLocalNarratives((prev) => {
+      if (!Array.isArray(prev)) return [];
+      return prev.map((item) => (item?.id === narrativeId ? updater(item) : item));
+    });
+  };
+
+  const handleFollowNarrative = async (narrativeId: string) => {
+    if (!userId) return;
+    const snapshot = localNarratives.find((item) => item.id === narrativeId);
+    updateNarrative(narrativeId, (item) => ({ ...item, is_followed: true }));
+    try {
+      await CommunityService.followNarrative(userId, narrativeId);
+      await refetchNarratives();
+    } catch (error: any) {
+      if (snapshot) {
+        updateNarrative(narrativeId, () => snapshot);
+      }
+      showToast(error.message || 'Failed to follow narrative');
+    }
+  };
+
+  const handleFadeNarrative = async (narrativeId: string) => {
+    if (!userId) return;
+    const snapshot = localNarratives.find((item) => item.id === narrativeId);
+    setFadedNarratives((prev) => new Set([...prev, narrativeId]));
+    updateNarrative(narrativeId, (item) => ({ ...item, is_followed: false }));
+    try {
+      await CommunityService.fadeNarrative(userId, narrativeId);
+      await refetchNarratives();
+    } catch (error: any) {
+      if (snapshot) {
+        updateNarrative(narrativeId, () => snapshot);
+      }
+      setFadedNarratives((prev) => {
+        const next = new Set(prev);
+        next.delete(narrativeId);
+        return next;
+      });
+      showToast(error.message || 'Failed to fade narrative');
+    }
+  };
+
+  const cryptoNarratives = useMemo(() => {
+    try {
+      if (!Array.isArray(localNarratives)) return [];
+      return localNarratives.filter(
+        (narrative) =>
+          narrative &&
+          narrative.category === 'crypto' &&
+          Array.isArray(narrative.assets) &&
+          narrative.assets.some(isCryptoAsset)
+      );
+    } catch (error) {
+      console.error('Error in cryptoNarratives useMemo:', error);
+      return [];
+    }
+  }, [localNarratives]);
+
+  const visibleNarratives = useMemo(() => {
+    try {
+      if (!Array.isArray(cryptoNarratives)) return [];
+      return cryptoNarratives.filter((narrative) => 
+        narrative && narrative.id && !fadedNarratives.has(narrative.id)
+      );
+    } catch (error) {
+      console.error('Error in visibleNarratives useMemo:', error);
+      return [];
+    }
+  }, [cryptoNarratives, fadedNarratives]);
+
+  const marketRooms = useMemo(() => {
+    try {
+      if (!Array.isArray(visibleNarratives)) return [];
+      return visibleNarratives.slice(0, 4).map((room) => {
+        if (!room || !room.id) return null;
+        return {
+          id: room.id,
+          title: room.title || 'Untitled',
+          active: room.insights?.change?.current || 0,
+          latest: (Array.isArray(room.insights?.headlines) && room.insights.headlines[0]?.title) || room.insights?.reason || '',
+          headlines: Array.isArray(room.insights?.headlines) ? room.insights.headlines : [],
+          sources: Array.isArray(room.insights?.sources) ? room.insights.sources : [],
+          narrative: room,
+        };
+      }).filter(Boolean) as any[];
+    } catch (e) {
+      console.error('Error creating market rooms:', e);
+      return [];
+    }
+  }, [visibleNarratives]);
+
+  const openRoomSheet = (room: any) => {
+    setSheetMode('room');
+    setSheetData(room);
+    setSheetVisible(true);
+  };
+
+  useEffect(() => {
+    const fetchRoomMessages = async () => {
+      if (!userId || !sheetData?.id) return;
+      try {
+        setRoomLoading(true);
+        setRoomError(null);
+        const messages = await CommunityService.getRoomMessages(userId, sheetData.id, 50);
+        setRoomMessages(messages);
+      } catch (error: any) {
+        setRoomError(error.message || 'Failed to load room messages');
+      } finally {
+        setRoomLoading(false);
+      }
+    };
+
+    if (sheetVisible && sheetMode === 'room') {
+      fetchRoomMessages();
+    }
+  }, [sheetVisible, sheetMode, sheetData?.id, userId]);
+
+  const handleSendRoomMessage = async () => {
+    if (!userId || !sheetData?.id) return;
+    const trimmed = roomInput.trim();
+    if (!trimmed) return;
+
+    const prefix =
+      roomMessageType === 'bull'
+        ? '📈 Bull case: '
+        : roomMessageType === 'bear'
+        ? '📉 Bear case: '
+        : roomMessageType === 'question'
+        ? '❓ Question: '
+        : roomMessageType === 'source'
+        ? '🔗 Source: '
+        : '🧠 Insight: ';
+
+    try {
+      const message = await CommunityService.postRoomMessage(userId, sheetData.id, `${prefix}${trimmed}`);
+      setRoomMessages((prev) => [message, ...prev]);
+      setRoomInput('');
+    } catch (error: any) {
+      setRoomError(error.message || 'Failed to post message');
+    }
+  };
+
+  const sheetVelocity = sheetMode === 'crypto' && sheetData ? getVelocitySnapshot(sheetData) : null;
+
+  // Error boundary - show error message if component crashes
+  if (componentError) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: theme.spacing.xl }]}>
+        <Text style={styles.errorText}>Error loading community page</Text>
+        <Text style={[styles.errorText, { fontSize: theme.typography.sizes.sm, marginTop: theme.spacing.md }]}>
+          {componentError.message}
+        </Text>
+        {Platform.OS === 'web' && (
+          <Pressable
+            onPress={() => {
+              setComponentError(null);
+              if (typeof window !== 'undefined') {
+                window.location.reload();
+              }
+            }}
+            style={{ marginTop: theme.spacing.lg, padding: theme.spacing.md, backgroundColor: theme.colors.accent, borderRadius: theme.borderRadius.md }}
+          >
+            <Text style={{ color: '#FFFFFF' }}>Reload Page</Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -207,17 +626,11 @@ export const CommunityScreen: React.FC = () => {
             <Text style={styles.title}>Community</Text>
             <Pressable
               onPress={() => {
-                // Safe haptic call - no-op on web
-                if (Platform.OS !== 'web') {
-                  try {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  } catch (error) {
-                    // Silently fail if haptics are not available
-                  }
-                }
-                setShowQRModal(true);
+                console.log('QR BUTTON PRESSED!');
+                handleQRPress();
               }}
               style={styles.qrButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Ionicons name="qr-code-outline" size={24} color={theme.colors.textSecondary} />
             </Pressable>
@@ -225,7 +638,9 @@ export const CommunityScreen: React.FC = () => {
 
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>Hey, @{username}</Text>
+          <Text style={styles.greetingText}>
+            Hey{username ? `, @${username}` : ''}
+          </Text>
           <View style={styles.greetingStats}>
             <View style={styles.statItem}>
               <Text style={styles.statIcon}>🔥</Text>
@@ -342,29 +757,46 @@ export const CommunityScreen: React.FC = () => {
                       <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
                     </View>
 
-                    {currentLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
-                        <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
-                        </View>
-                        <View style={styles.userCol}>
-                          <Avatar
-                            userId={entry.userId}
-                            username={entry.username}
-                            size={32}
-                          />
-                          <Text style={styles.username}>{entry.username}</Text>
-                        </View>
-                        <View style={styles.returnCol}>
-                          <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
-                          </Text>
-                        </View>
-                        <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
-                        </View>
+                    {leaderboardLoading && (
+                      <View style={styles.loadingRow}>
+                        <ActivityIndicator color="#FF6B35" />
+                        <Text style={styles.loadingText}>Loading leaderboard...</Text>
                       </View>
-                    ))}
+                    )}
+
+                    {leaderboardError && !leaderboardLoading && (
+                      <View style={styles.errorRow}>
+                        <Text style={styles.errorText}>{leaderboardError}</Text>
+                      </View>
+                    )}
+
+                    {!leaderboardLoading && !leaderboardError && safeGlobalLeaderboard.map((entry) => {
+                      if (!entry || !entry.userId) return null;
+                      const username = entry.username || 'Unknown';
+                      return (
+                        <View key={entry.userId} style={styles.tableRow}>
+                          <View style={styles.rankCol}>
+                            <Text style={styles.rankText}>#{entry.rank || 0}</Text>
+                          </View>
+                          <View style={styles.userCol}>
+                            <View style={styles.avatar}>
+                              <Text style={styles.avatarText}>
+                                {username.substring(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={styles.username}>{username}</Text>
+                          </View>
+                          <View style={styles.returnCol}>
+                            <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
+                              +{entry.returnPercent || 0}%
+                            </Text>
+                          </View>
+                          <View style={styles.winRateCol}>
+                            <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 </ScrollView>
               </View>
@@ -436,32 +868,49 @@ export const CommunityScreen: React.FC = () => {
                       <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
                     </View>
 
-                    {currentFriendsLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
-                        <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
-                        </View>
-                        <View style={styles.userCol}>
-                          <Avatar
-                            userId={entry.userId}
-                            username={entry.username}
-                            size={32}
-                            isYou={entry.userId === 'user-you'}
-                          />
-                          <Text style={[styles.username, entry.userId === 'user-you' && styles.usernameYou]}>
-                            {entry.username}
-                          </Text>
-                        </View>
-                        <View style={styles.returnCol}>
-                          <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
-                          </Text>
-                        </View>
-                        <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
-                        </View>
+                    {leaderboardLoading && (
+                      <View style={styles.loadingRow}>
+                        <ActivityIndicator color="#FF6B35" />
+                        <Text style={styles.loadingText}>Loading leaderboard...</Text>
                       </View>
-                    ))}
+                    )}
+
+                    {leaderboardError && !leaderboardLoading && (
+                      <View style={styles.errorRow}>
+                        <Text style={styles.errorText}>{leaderboardError}</Text>
+                      </View>
+                    )}
+
+                    {!leaderboardLoading && !leaderboardError && safeFriendsLeaderboard.map((entry) => {
+                      if (!entry || !entry.userId) return null;
+                      const username = entry.username || 'Unknown';
+                      const isCurrentUser = entry.userId === userId;
+                      return (
+                        <View key={entry.userId} style={styles.tableRow}>
+                          <View style={styles.rankCol}>
+                            <Text style={styles.rankText}>#{entry.rank || 0}</Text>
+                          </View>
+                          <View style={styles.userCol}>
+                            <View style={[styles.avatar, isCurrentUser && styles.avatarYou]}>
+                              <Text style={styles.avatarText}>
+                                {username.substring(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={[styles.username, isCurrentUser && styles.usernameYou]}>
+                              {username}
+                            </Text>
+                          </View>
+                          <View style={styles.returnCol}>
+                            <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
+                              +{entry.returnPercent || 0}%
+                            </Text>
+                          </View>
+                          <View style={styles.winRateCol}>
+                            <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 </ScrollView>
               </View>
@@ -487,122 +936,164 @@ export const CommunityScreen: React.FC = () => {
         >
           <View style={styles.sectionContent}>
             <Text style={styles.sectionTitle}>Market Narratives</Text>
-            
-            {/* Main Narrative Signal Card */}
-            <View style={styles.narrativeCard}>
-              <View style={styles.narrativeHeader}>
-                <Text style={styles.narrativeTrending}>🔥 AI is trending on X</Text>
+            {narrativesLoading && (
+              <Text style={styles.loadingText}>Loading narratives...</Text>
+            )}
+            {narrativesError && !narrativesLoading && (
+              <Text style={styles.errorText}>{narrativesError}</Text>
+            )}
+            {!narrativesLoading && !narrativesError && (!Array.isArray(cryptoNarratives) || cryptoNarratives.length === 0) && (
+              <View style={styles.emptyStateBlock}>
+                <Text style={styles.emptyStateText}>No active crypto narratives right now</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Last updated: {formatTimestamp(lastNarrativesUpdatedAt)}
+                </Text>
               </View>
-              
-              <View style={styles.narrativeMetrics}>
-                <View style={styles.metricRow}>
-                  <Text style={styles.metricLabel}>Mentions:</Text>
-                  <Text style={styles.metricValue}>▲ +280% <Text style={styles.metricPeriod}>(24h)</Text></Text>
-                </View>
-                
-                <View style={styles.metricRow}>
-                  <Text style={styles.metricLabel}>Trigger:</Text>
-                  <Text style={styles.metricDescription}>Public comments by Elon Musk</Text>
-                </View>
-                
-                <View style={styles.metricRow}>
-                  <Text style={styles.metricLabel}>Market reaction:</Text>
-                  <Text style={styles.metricMarket}>AI basket +2.4%</Text>
-                </View>
-              </View>
+            )}
+            {Array.isArray(cryptoNarratives) && cryptoNarratives.length > 0 && cryptoNarratives.map((narrative) => {
+              if (!narrative || !narrative.id) return null;
+              const isFaded = fadedNarratives.has(narrative.id);
 
-              {/* Timeline */}
-              <View style={styles.narrativeTimeline}>
-                <Text style={styles.timelineTitle}>Timeline</Text>
-                <View style={styles.timelineEvents}>
-                  <View style={styles.timelineEvent}>
-                    <Text style={styles.timelineTime}>09:12</Text>
-                    <Text style={styles.timelineDescription}>AI mentions spike</Text>
-                  </View>
-                  <View style={styles.timelineEvent}>
-                    <Text style={styles.timelineTime}>10:40</Text>
-                    <Text style={styles.timelineDescription}>Public figure comment</Text>
-                  </View>
-                  <View style={styles.timelineEvent}>
-                    <Text style={styles.timelineTime}>11:15</Text>
-                    <Text style={styles.timelineDescription}>Market reaction</Text>
+              return (
+                <View key={narrative.id}>
+                  {/* Narrative Title */}
+                  <Text style={styles.narrativePageTitle}>{narrative.title || 'Untitled Narrative'}</Text>
+                  
+                  <View
+                    style={[styles.narrativeCard, isFaded && styles.narrativeCardMuted]}
+                  >
+
+                  {/* Current Positions */}
+                  {Array.isArray(narrative.assets) && narrative.assets.length > 0 && (() => {
+                    // Extract position values from reason text
+                    // Format: "223,341 $ETH($736M)" or "$ETH($65.4M)"
+                    const positionValues = new Map<string, string>();
+                    const reasonText = narrative.insights?.reason || '';
+                    
+                    // Try to extract values like "$ETH($736M)" or "20,000 $ETH($65.4M)"
+                    narrative.assets.forEach((asset) => {
+                      try {
+                        if (!asset || typeof asset !== 'string') return;
+                        const assetSymbol = asset.replace('$', '');
+                        // Escape special regex characters
+                        const escapedSymbol = assetSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        
+                        // Look for patterns like "$ETH($736M)" or "223,341 $ETH($736M)"
+                        // Pattern: (optional number) $SYMBOL($value)
+                        const pattern = new RegExp(`(?:\\d+[,\\d]*\\s+)?\\$${escapedSymbol}\\s*\\(([\\$\\d.]+[BMK]?)\\)`, 'gi');
+                        let match;
+                        let lastValue: string | null = null;
+                        
+                        // Find all matches (compatible with React Native)
+                        while ((match = pattern.exec(reasonText)) !== null) {
+                          if (match[1]) {
+                            lastValue = match[1];
+                          }
+                        }
+                        
+                        if (lastValue) {
+                          positionValues.set(asset, lastValue);
+                        }
+                      } catch (e) {
+                        console.warn('Error extracting position value for asset:', asset, e);
+                      }
+                    });
+                    
+                    return (
+                      <View style={styles.positionsSection}>
+                        <Text style={styles.sectionLabel}>Positions</Text>
+                        <View style={styles.positionsRow}>
+                          {Array.isArray(narrative.assets) && narrative.assets.map((asset) => {
+                            if (!asset || typeof asset !== 'string') return null;
+                            const value = positionValues.get(asset);
+                            return (
+                              <View key={asset} style={styles.positionTag}>
+                                <Text style={styles.positionTagText}>
+                                  {asset}{value ? `: ${value}` : ''}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    );
+                  })()}
+
+                  {/* News Widget */}
+                  {Array.isArray(narrative.insights?.headlines) && narrative.insights.headlines.length > 0 && (
+                    <View style={styles.headlinesSection}>
+                      <Text style={styles.sectionLabel}>News</Text>
+                      {narrative.insights.headlines.slice(0, 5).map((headline, index) => {
+                        try {
+                          if (!headline || !headline.title) return null;
+                          // Remove "Current positions:" section from headline text
+                          let cleanedTitle = headline.title || '';
+                          // Remove everything from "Current positions:" (case insensitive) to the end
+                          const positionsPattern = /\n\s*Current\s+positions?:?\s*\n.*$/is;
+                          cleanedTitle = cleanedTitle.replace(positionsPattern, '').trim();
+                          
+                          return (
+                            <Pressable
+                              key={`${headline.url || index}-${index}`}
+                              onPress={() => headline.url && Linking.openURL(headline.url)}
+                              style={styles.headlineLink}
+                            >
+                              <Text style={styles.headlineText}>{cleanedTitle}</Text>
+                              <Ionicons name="open-outline" size={16} color="rgba(255, 255, 255, 0.5)" />
+                            </Pressable>
+                          );
+                        } catch (e) {
+                          console.warn('Error rendering headline:', e);
+                          return null;
+                        }
+                      })}
+                    </View>
+                  )}
                   </View>
                 </View>
-              </View>
-
-              {/* CTAs */}
-              <View style={styles.narrativeCTAs}>
-                <Pressable style={styles.followButton}>
-                  <Text style={styles.followButtonText}>Follow narrative</Text>
-                </Pressable>
-                <Pressable style={styles.fadeButton}>
-                  <Text style={styles.fadeButtonText}>Fade narrative</Text>
-                </Pressable>
-              </View>
-            </View>
+              );
+            })}
           </View>
         </GlowingBorder>
 
-        {/* Social Feed */}
+        {/* Open Discussion Rooms */}
         <GlowingBorder
           style={styles.sectionContainer}
-            glowColor="rgba(255, 255, 255, 0.2)"
+          glowColor="rgba(255, 255, 255, 0.2)"
           disabled={false}
           glow={false}
           spread={8}
-          proximity={0}
+          proximity={0.7}
           inactiveZone={0.7}
           movementDuration={2000}
           borderWidth={0.15}
         >
           <View style={styles.sectionContent}>
-            <Text style={styles.sectionTitle}>Social Feed</Text>
-
-          {mockSocialPosts.map((post) => (
-            <View key={post.id} style={styles.postCard}>
-              <View style={styles.postHeader}>
-                <Avatar
-                  username={post.handle.replace('@', '')}
-                  size={40}
-                  style={styles.postAvatar}
-                />
-                <View style={styles.postMeta}>
-                  <Text style={styles.postAuthor}>{post.author}</Text>
-                  <Text style={styles.postHandle}>{post.handle} · {formatTimeAgo(post.timestamp)}</Text>
-                </View>
-                <Pill
-                  variant={
-                    post.sentiment === 'bullish'
-                      ? 'success'
-                      : post.sentiment === 'bearish'
-                      ? 'error'
-                      : 'secondary'
-                  }
+            <Text style={styles.sectionTitle}>Open discussion rooms</Text>
+            {marketRooms.length === 0 && (
+              <Text style={styles.emptyStateText}>No active rooms yet</Text>
+            )}
+            {Array.isArray(marketRooms) && marketRooms.map((room) => {
+              if (!room || !room.id) return null;
+              return (
+                <Pressable
+                  key={room.id}
+                  style={styles.roomRow}
+                  onPress={() => openRoomSheet(room)}
                 >
-                  {post.sentiment}
-                </Pill>
-              </View>
-
-              <Text style={styles.postContent}>{post.content}</Text>
-
-              {post.tickersMentioned.length > 0 && (
-                <View style={styles.tickersRow}>
-                  {post.tickersMentioned.map((ticker) => (
-                    <Pill key={ticker} variant="secondary">
-                      ${ticker}
-                    </Pill>
-                  ))}
-                </View>
-              )}
-
-              <View style={styles.postFooter}>
-                <View style={styles.postActions}>
-                  <Ionicons name="heart-outline" size={18} color={theme.colors.textTertiary} />
-                  <Text style={styles.likesCount}>{post.likes}</Text>
-                </View>
-              </View>
-            </View>
-            ))}
+                  <View style={styles.roomHeader}>
+                    <Text style={styles.roomTitle}>{room.title || 'Untitled Room'}</Text>
+                    <Text style={styles.roomMeta}>{room.active || 0} signals active</Text>
+                  </View>
+                  <Text style={styles.roomLatest} numberOfLines={1}>
+                    Latest headline ▸ {room.latest || 'No updates'}
+                  </Text>
+                  <View style={styles.roomCTA}>
+                    <Text style={styles.roomCTAText}>Open room</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         </GlowingBorder>
         </>
@@ -614,9 +1105,161 @@ export const CommunityScreen: React.FC = () => {
       <QRCodeModal
         visible={showQRModal}
         onClose={() => setShowQRModal(false)}
-        username={username}
+        userId={userId || ''}
+        username={username || ''}
       />
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        visible={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        userId={userId || ''}
+        onFriendAdded={handleFriendAdded}
+      />
+
+      {/* Bottom Sheet */}
+      <Modal visible={sheetVisible} transparent animationType="slide">
+        <Pressable style={styles.sheetOverlay} onPress={() => setSheetVisible(false)}>
+          <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
+            {sheetMode === 'crypto' && sheetData && (
+              <>
+                <Text style={styles.sheetTitle}>{sheetData.title}</Text>
+                <Text style={styles.sheetSubtitle}>Narrative snapshot</Text>
+                <Text style={styles.sheetMeta}>
+                  {sheetVelocity?.direction ?? '—'} {sheetVelocity?.percent ?? 0}% (24h) ·{' '}
+                  {Array.isArray(sheetData.insights?.sources) ? sheetData.insights.sources.length : 0} sources ·{' '}
+                  {getConfidenceLabel(sheetData.insights?.confidence?.level || 'low')} confidence
+                </Text>
+                <View style={styles.sheetSection}>
+                  <Text style={styles.sheetWhy} numberOfLines={3}>
+                    Why: {getWhyLine(sheetData.insights.reason)}
+                  </Text>
+                </View>
+                {Array.isArray(sheetData.insights?.headlines) && sheetData.insights.headlines.length > 0 && (
+                  <>
+                    <Text style={styles.sheetSubtitle}>Latest headlines</Text>
+                    <View style={styles.sheetSection}>
+                      {Array.isArray(sheetData.insights.headlines) && sheetData.insights.headlines.slice(0, 3).map((headline: { title: string; url: string }, index: number) => {
+                        if (!headline || !headline.title) return null;
+                        return (
+                          <Pressable
+                            key={`${headline.title}-${index}`}
+                            onPress={() => headline.url && Linking.openURL(headline.url)}
+                            style={styles.sheetHeadlineLink}
+                          >
+                            <Text style={styles.sheetBullet}>
+                              • {headline.title}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+                {Array.isArray(sheetData.insights?.sources) && sheetData.insights.sources.length > 0 && (
+                  <>
+                    <Text style={styles.sheetSubtitle}>Sources</Text>
+                    <View style={styles.sheetSources}>
+                      {Array.isArray(sheetData.insights.sources) && sheetData.insights.sources.map((source: string) => {
+                        if (!source || typeof source !== 'string') return null;
+                        return (
+                          <View key={source} style={styles.sourcePill}>
+                            <Text style={styles.sourcePillText}>{source.toUpperCase()}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+            {sheetMode === 'room' && sheetData && (
+              <>
+                <Text style={styles.sheetTitle}>{sheetData.title}</Text>
+                <Text style={styles.sheetSubtitle}>Market room</Text>
+
+                <View style={styles.messageTypeRow}>
+                  {([
+                    { key: 'bull', label: 'Bull' },
+                    { key: 'bear', label: 'Bear' },
+                    { key: 'question', label: 'Question' },
+                    { key: 'insight', label: 'Insight' },
+                    { key: 'source', label: 'Source' },
+                  ] as const).map((type) => {
+                    if (!type || !type.key) return null;
+                    return (
+                      <Pressable
+                        key={type.key}
+                        style={[
+                          styles.messageTypePill,
+                          roomMessageType === type.key && styles.messageTypePillActive,
+                        ]}
+                        onPress={() => setRoomMessageType(type.key)}
+                      >
+                        <Text
+                          style={[
+                            styles.messageTypeText,
+                            roomMessageType === type.key && styles.messageTypeTextActive,
+                          ]}
+                        >
+                          {type.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.roomMessages}>
+                  {roomLoading && <Text style={styles.loadingText}>Loading room…</Text>}
+                  {roomError && <Text style={styles.errorText}>{roomError}</Text>}
+                  {!roomLoading && !roomError && roomMessages.length === 0 && (
+                    <Text style={styles.emptyStateText}>Be the first to add a take</Text>
+                  )}
+                  {Array.isArray(roomMessages) && roomMessages.map((message) => {
+                    if (!message || !message.id) return null;
+                    return (
+                      <View key={message.id} style={styles.roomMessageRow}>
+                        <Text style={styles.roomMessageAuthor}>@{message.username || 'unknown'}</Text>
+                        <Text style={styles.roomMessageText}>{message.text || ''}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.roomComposer}>
+                  <TextInput
+                    value={roomInput}
+                    onChangeText={setRoomInput}
+                    placeholder="Add a short take…"
+                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                    style={styles.roomInput}
+                    multiline
+                  />
+                  <Pressable style={styles.roomSendButton} onPress={handleSendRoomMessage}>
+                    <Text style={styles.roomSendButtonText}>Post</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {toastMessage && (
+        <View style={styles.toastContainer}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
+  );
+};
+
+// Export wrapped component with error boundary
+export const CommunityScreen: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <CommunityScreenContent />
+    </ErrorBoundary>
   );
 };
 
@@ -667,8 +1310,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   statValue: {
-    fontSize: theme.typography.sizes.md,
-    fontWeight: theme.typography.weights.semibold,
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
     color: '#FFFFFF',
   },
   sectionNav: {
@@ -706,7 +1349,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   qrButton: {
-    padding: theme.spacing.xs,
+    padding: theme.spacing.md,
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
   },
   sectionContainer: {
     padding: 2, // Only enough space for the gradient border
@@ -862,7 +1509,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 580, // Height to show header, filters, and more rows
+    height: 500, // Height to show header, filters, and top 5 rows
     position: 'relative',
   },
   flipCard: {
@@ -899,7 +1546,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.semibold,
   },
   tableScrollView: {
-    maxHeight: 460, // Height to show more rows (table header + rows + gaps)
+    maxHeight: 380, // Height to show exactly 5 rows initially (table header + 5 rows + gaps)
   },
   tableScrollContent: {
     paddingBottom: theme.spacing.xs,
@@ -924,6 +1571,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: theme.spacing.md,
     alignItems: 'center',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
+  },
+  loadingText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: theme.typography.sizes.sm,
+  },
+  errorRow: {
+    paddingVertical: theme.spacing.md,
+  },
+  errorText: {
+    color: theme.colors.error,
+    fontSize: theme.typography.sizes.sm,
   },
   rankCol: {
     width: 50,
@@ -992,6 +1656,124 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
+  narrativeCardMuted: {
+    opacity: 0.5,
+  },
+  narrativePageTitle: {
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+  },
+  narrativeTitle: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.md,
+  },
+  positionsSection: {
+    marginBottom: theme.spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.sm,
+  },
+  positionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  positionTag: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
+  },
+  positionTagText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FF6B35',
+  },
+  headlinesSection: {
+    marginBottom: theme.spacing.md,
+  },
+  headlineLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    marginBottom: theme.spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  headlineText: {
+    flex: 1,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: theme.typography.sizes.sm * 1.4,
+  },
+  narrativeCompactCard: {
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.lg,
+    backgroundColor: 'rgba(8, 8, 12, 0.6)',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  narrativeCompactCardMuted: {
+    opacity: 0.5,
+  },
+  narrativeCompactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  narrativeCompactTitle: {
+    flex: 1,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  narrativeCompactMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginBottom: theme.spacing.xs,
+  },
+  narrativeCompactWhy: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: theme.spacing.sm,
+  },
+  narrativeCompactActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  velocityBadge: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+  },
+  velocityBadgeText: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FF6B35',
+  },
   narrativeHeader: {
     marginBottom: theme.spacing.md,
   },
@@ -1004,6 +1786,413 @@ const styles = StyleSheet.create({
   narrativeMetrics: {
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.lg,
+  },
+  narrativeWhy: {
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  narrativeWhyText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: theme.typography.sizes.sm * theme.typography.lineHeights.relaxed,
+  },
+  pulseContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  pulseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  pulseLabel: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+    minWidth: 90,
+  },
+  pulseBar: {
+    flexDirection: 'row',
+    gap: 4,
+    flex: 1,
+  },
+  pulseSegment: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+  },
+  pulseSegmentActive: {
+    backgroundColor: '#FF6B35',
+  },
+  pulseSegmentInactive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  pulseLevel: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.7)',
+    minWidth: 90,
+    textAlign: 'right',
+  },
+  pulseDetail: {
+    marginTop: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
+  },
+  pulseDetailText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  whyCard: {
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: theme.spacing.lg,
+  },
+  whyCardTitle: {
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.xs,
+  },
+  whyCardText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  whyCardBullet: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginBottom: theme.spacing.xs,
+  },
+  sourceStack: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+  },
+  sourcePill: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  sourcePillText: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  deltaCard: {
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: theme.spacing.lg,
+  },
+  deltaTitle: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.xs,
+  },
+  deltaLine: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: theme.spacing.xs,
+  },
+  scenarioContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  scenarioChip: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    marginBottom: theme.spacing.sm,
+  },
+  scenarioChipActive: {
+    borderColor: '#FF6B35',
+  },
+  scenarioChipText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  scenarioText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: theme.spacing.xs,
+  },
+  mapContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  mapNode: {
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  mapNodeText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  mapLine: {
+    width: 2,
+    height: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginTop: theme.spacing.xs,
+  },
+  mapClear: {
+    marginTop: theme.spacing.sm,
+  },
+  mapClearText: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.bullish,
+  },
+  cryptoSignalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  cryptoAsset: {
+    width: 52,
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  cryptoEvent: {
+    flex: 1,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginRight: theme.spacing.sm,
+  },
+  cryptoReaction: {
+    width: 70,
+    textAlign: 'right',
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  cryptoBullish: {
+    color: theme.colors.bullish,
+  },
+  cryptoBearish: {
+    color: theme.colors.bearish,
+  },
+  emptyStateText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  emptyStateBlock: {
+    paddingVertical: theme.spacing.sm,
+  },
+  emptyStateSubtext: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.45)',
+    marginTop: theme.spacing.xs,
+  },
+  roomRow: {
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  roomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.xs,
+  },
+  roomTitle: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  roomMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  roomLatest: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  roomCTA: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+  },
+  roomCTAText: {
+    fontSize: theme.typography.sizes.xs,
+    color: '#FF6B35',
+    fontWeight: theme.typography.weights.semibold,
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheetContainer: {
+    backgroundColor: '#0F0A06',
+    padding: theme.spacing.lg,
+    borderTopLeftRadius: theme.borderRadius.lg,
+    borderTopRightRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  sheetTitle: {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.sm,
+  },
+  sheetSubtitle: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: theme.spacing.sm,
+  },
+  sheetSection: {
+    marginBottom: theme.spacing.lg,
+  },
+  sheetMeta: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginBottom: theme.spacing.sm,
+  },
+  sheetWhy: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  sheetBullet: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: theme.spacing.xs,
+  },
+  sheetHeadlineLink: {
+    marginBottom: theme.spacing.xs,
+  },
+  sheetSources: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  messageTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  messageTypePill: {
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  messageTypePillActive: {
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+  },
+  messageTypeText: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  messageTypeTextActive: {
+    color: '#FF6B35',
+    fontWeight: theme.typography.weights.semibold,
+  },
+  roomMessages: {
+    marginBottom: theme.spacing.lg,
+  },
+  roomMessageRow: {
+    marginBottom: theme.spacing.sm,
+  },
+  roomMessageAuthor: {
+    fontSize: theme.typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginBottom: theme.spacing.xs,
+  },
+  roomMessageText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  roomComposer: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: theme.spacing.md,
+  },
+  roomInput: {
+    minHeight: 48,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    color: '#FFFFFF',
+    marginBottom: theme.spacing.sm,
+  },
+  roomSendButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: '#FF6B35',
+  },
+  roomSendButtonText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#0F0A06',
+  },
+  actionChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  actionChip: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.5)',
+  },
+  actionChipMuted: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  actionChipText: {
+    fontSize: theme.typography.sizes.sm,
+    color: '#FFFFFF',
+  },
+  actionChipSubtext: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  narrativeSignalRow: {
+    marginBottom: theme.spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  narrativeSignal: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.bullish,
+  },
+  narrativeDetails: {
+    marginTop: theme.spacing.md,
   },
   metricRow: {
     flexDirection: 'row',
@@ -1044,6 +2233,31 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.md,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  narrativeConfidence: {
+    marginTop: theme.spacing.md,
+  },
+  confidenceText: {
+    marginTop: theme.spacing.xs,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: theme.typography.weights.semibold,
+  },
+  confidenceDrivers: {
+    marginTop: theme.spacing.xs,
+  },
+  confidenceDriverText: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  narrativeNext: {
+    marginTop: theme.spacing.md,
+  },
+  narrativeNextText: {
+    marginTop: theme.spacing.xs,
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: theme.typography.sizes.sm * theme.typography.lineHeights.relaxed,
   },
   timelineTitle: {
     fontSize: theme.typography.sizes.xs,
@@ -1172,7 +2386,15 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   postAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   postAvatarText: {
     fontSize: theme.typography.sizes.sm,
@@ -1197,6 +2419,11 @@ const styles = StyleSheet.create({
     lineHeight: theme.typography.sizes.md * theme.typography.lineHeights.relaxed,
     marginBottom: theme.spacing.md,
   },
+  postSubtext: {
+    fontSize: theme.typography.sizes.sm,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: theme.spacing.xs,
+  },
   postFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1216,4 +2443,22 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     color: 'rgba(255, 255, 255, 0.6)',
   },
+  toastContainer: {
+    position: 'absolute',
+    left: theme.spacing.lg,
+    right: theme.spacing.lg,
+    bottom: theme.spacing.xl,
+    backgroundColor: 'rgba(15, 15, 20, 0.95)',
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  toastText: {
+    fontSize: theme.typography.sizes.sm,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
 });
+
