@@ -13,6 +13,7 @@ import { theme } from '@app/theme';
 interface GlowingBorderProps extends ViewProps {
   children?: React.ReactNode;
   glowColor?: string;
+  gradientColors?: string[];
   borderWidth?: number;
   borderRadius?: number;
   style?: ViewStyle;
@@ -32,6 +33,7 @@ interface GlowingBorderProps extends ViewProps {
 export const GlowingBorder: React.FC<GlowingBorderProps> = ({
   children,
   glowColor = 'rgba(255, 107, 53, 0.6)',
+  gradientColors: customGradientColors,
   borderWidth = 2,
   borderRadius = theme.borderRadius.lg,
   inactiveZone = 0.7,
@@ -151,6 +153,10 @@ export const GlowingBorder: React.FC<GlowingBorderProps> = ({
   // Create gradient colors with orange, red, and yellow shades (warm gradient)
   // Colors: #FF6B35 (vibrant orange-red), #FF8C42 (bright orange), #FFB347 (yellow-orange), #FF4500 (red-orange)
   const gradientColors = React.useMemo(() => {
+    if (customGradientColors && customGradientColors.length > 0) {
+      return customGradientColors;
+    }
+    
     const color1 = '#FF6B35'; // Vibrant orange-red
     const color2 = '#FF8C42'; // Bright orange
     const color3 = '#FFB347'; // Yellow-orange
@@ -159,7 +165,7 @@ export const GlowingBorder: React.FC<GlowingBorderProps> = ({
     const color6 = '#FFB347'; // Yellow-orange (loop back)
 
     return [color1, color2, color3, color4, color5, color6, color1];
-  }, []);
+  }, [customGradientColors]);
 
   return (
     <View

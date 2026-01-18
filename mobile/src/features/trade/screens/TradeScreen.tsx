@@ -382,7 +382,7 @@ export const TradeScreen: React.FC = () => {
                 <Ionicons 
                   name={isChartExpanded ? "chevron-up" : "analytics-outline"} 
                   size={14} 
-                  color="#FF6B35" 
+                  color="#8B5CF6" 
                 />
                 <Text style={styles.chartToggleText}>
                   {isChartExpanded ? 'Hide Chart' : 'View Chart'}
@@ -461,14 +461,14 @@ export const TradeScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Background gradients */}
       <LinearGradient
-        colors={['#0A0500', '#1A0F00', '#2A1505', '#1A0F00', '#0F0800']}
+        colors={['#050A14', '#0A0F1E', '#0F1428', '#0A0F1E', '#050812']}
         locations={[0, 0.3, 0.5, 0.7, 1]}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
       <LinearGradient
-        colors={['rgba(255, 107, 53, 0.15)', 'rgba(255, 140, 60, 0.08)', 'transparent', 'rgba(255, 179, 71, 0.12)', 'rgba(255, 107, 53, 0.10)']}
+        colors={['rgba(139, 92, 246, 0.15)', 'rgba(96, 165, 250, 0.08)', 'transparent', 'rgba(59, 130, 246, 0.12)', 'rgba(124, 58, 237, 0.10)']}
         locations={[0, 0.25, 0.5, 0.75, 1]}
         start={{ x: 0.3, y: 0.2 }}
         end={{ x: 0.7, y: 0.8 }}
@@ -494,12 +494,12 @@ export const TradeScreen: React.FC = () => {
               {/* Wallet Connection */}
               {isConnected ? (
                 <Pressable style={styles.walletButton} onPress={() => setShowWalletModal(true)}>
-                  <Ionicons name="wallet" size={18} color="#FF6B35" />
+                  <Ionicons name="wallet" size={18} color="#8B5CF6" />
                   <Text style={styles.walletText}>{formatAddress(walletAddress)}</Text>
                 </Pressable>
               ) : (
                 <Pressable style={styles.connectButton} onPress={() => setShowWalletModal(true)}>
-                  <Ionicons name="wallet-outline" size={18} color="#FF6B35" />
+                  <Ionicons name="wallet-outline" size={18} color="#8B5CF6" />
                   <Text style={styles.connectText}>Connect</Text>
                 </Pressable>
               )}
@@ -509,7 +509,8 @@ export const TradeScreen: React.FC = () => {
           {/* Choose Your Trade Section */}
           <GlowingBorder
             style={styles.mainPanel}
-            glowColor="rgba(255, 255, 255, 0.2)"
+            glowColor="rgba(139, 92, 246, 0.4)"
+            gradientColors={['#8B5CF6', '#60A5FA', '#3B82F6', '#8B5CF6', '#7C3AED', '#60A5FA', '#8B5CF6']}
             disabled={false}
             glow={false}
             spread={8}
@@ -551,7 +552,7 @@ export const TradeScreen: React.FC = () => {
               {/* Add trade button */}
               {trades.length < MAX_TRADES && (
                 <Pressable onPress={addTrade} style={styles.addTradeButton}>
-                  <Ionicons name="add-circle-outline" size={24} color="#FF6B35" />
+                  <Ionicons name="add-circle-outline" size={24} color="#8B5CF6" />
                   <Text style={styles.addTradeText}>Add Another Trade</Text>
                 </Pressable>
               )}
@@ -561,7 +562,8 @@ export const TradeScreen: React.FC = () => {
           {/* Amount & Place Bet */}
           <GlowingBorder
             style={styles.tradeTicket}
-            glowColor="rgba(255, 255, 255, 0.2)"
+            glowColor="rgba(96, 165, 250, 0.4)"
+            gradientColors={['#8B5CF6', '#60A5FA', '#3B82F6', '#8B5CF6', '#7C3AED', '#60A5FA', '#8B5CF6']}
             disabled={false}
             glow={false}
             spread={8}
@@ -633,7 +635,7 @@ export const TradeScreen: React.FC = () => {
               {/* Validation hints */}
               {totalWeight !== 100 && trades.length > 0 && (
                 <View style={styles.hintBox}>
-                  <Ionicons name="information-circle" size={16} color="#FF6B35" />
+                  <Ionicons name="information-circle" size={16} color="#8B5CF6" />
                   <Text style={styles.hintText}>
                     Weights should total 100% (currently {totalWeight}%)
                   </Text>
@@ -653,7 +655,8 @@ export const TradeScreen: React.FC = () => {
           {/* Open Positions Section */}
           <GlowingBorder
             style={styles.positionsPanel}
-            glowColor="rgba(255, 255, 255, 0.2)"
+            glowColor="rgba(124, 58, 237, 0.4)"
+            gradientColors={['#8B5CF6', '#60A5FA', '#3B82F6', '#8B5CF6', '#7C3AED', '#60A5FA', '#8B5CF6']}
             disabled={false}
             glow={false}
             spread={8}
@@ -667,9 +670,9 @@ export const TradeScreen: React.FC = () => {
                 <Text style={styles.sectionLabel}>Open Positions</Text>
                 <Pressable onPress={fetchOpenPositions} style={styles.refreshButton}>
                   {isLoadingPositions ? (
-                    <ActivityIndicator size="small" color="#FF6B35" />
+                    <ActivityIndicator size="small" color="#8B5CF6" />
                   ) : (
-                    <Ionicons name="refresh" size={20} color="#FF6B35" />
+                    <Ionicons name="refresh" size={20} color="#8B5CF6" />
                   )}
                 </Pressable>
               </View>
@@ -677,7 +680,7 @@ export const TradeScreen: React.FC = () => {
               {/* Loading State */}
               {isLoadingPositions && openPositions.length === 0 && (
                 <View style={styles.positionsLoading}>
-                  <ActivityIndicator size="large" color="#FF6B35" />
+                  <ActivityIndicator size="large" color="#8B5CF6" />
                   <Text style={styles.positionsLoadingText}>Loading positions...</Text>
                 </View>
               )}
@@ -902,7 +905,7 @@ export const TradeScreen: React.FC = () => {
                 </View>
               ) : (
                 <View style={styles.walletModalContent}>
-                  <Ionicons name="wallet-outline" size={48} color="#FF6B35" />
+                  <Ionicons name="wallet-outline" size={48} color="#8B5CF6" />
                   <Text style={styles.walletDescription}>
                     Enter your wallet address and private key to authenticate and start trading
                   </Text>
@@ -1010,14 +1013,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 107, 53, 0.4)',
+    borderColor: 'rgba(139, 92, 246, 0.4)',
   },
   walletText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
   connectButton: {
     flexDirection: 'row',
@@ -1026,14 +1029,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 107, 53, 0.4)',
+    borderColor: 'rgba(139, 92, 246, 0.4)',
   },
   connectText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
 
   // Main Panel
@@ -1082,7 +1085,7 @@ const styles = StyleSheet.create({
   },
   weightBarFill: {
     height: '100%',
-    backgroundColor: '#FF6B35',
+    backgroundColor: '#8B5CF6',
     borderRadius: 2,
   },
   weightBarOverflow: {
@@ -1094,7 +1097,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   weightTotalWarning: {
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
 
   // Trade card
@@ -1144,7 +1147,7 @@ const styles = StyleSheet.create({
   weightValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: '#8B5CF6',
     minWidth: 40,
     textAlign: 'center',
   },
@@ -1165,8 +1168,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   assetSelectorSelected: {
-    backgroundColor: 'rgba(255, 107, 53, 0.15)',
-    borderColor: '#FF6B35',
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    borderColor: '#8B5CF6',
     borderStyle: 'solid',
   },
   selectedAssetDisplay: {
@@ -1285,14 +1288,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 107, 53, 0.2)',
+    borderColor: 'rgba(139, 92, 246, 0.2)',
   },
   chartToggleText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
 
   // Charts section
@@ -1336,15 +1339,15 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 107, 53, 0.3)',
+    borderColor: 'rgba(139, 92, 246, 0.3)',
     borderStyle: 'dashed',
   },
   addTradeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
 
   // Trade ticket
@@ -1374,8 +1377,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   quickAmountButtonActive: {
-    backgroundColor: 'rgba(255, 107, 53, 0.2)',
-    borderColor: '#FF6B35',
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: '#8B5CF6',
   },
   quickAmountText: {
     fontSize: 15,
@@ -1383,7 +1386,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.6)',
   },
   quickAmountTextActive: {
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
   inputGroup: {
     marginBottom: theme.spacing.lg,
@@ -1421,13 +1424,13 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: theme.spacing.md,
     padding: 12,
-    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
     borderRadius: 8,
   },
   hintText: {
     flex: 1,
     fontSize: 13,
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
   riskWarning: {
     flexDirection: 'row',
@@ -1536,8 +1539,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   assetItemSelected: {
-    backgroundColor: 'rgba(255, 107, 53, 0.15)',
-    borderColor: '#FF6B35',
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    borderColor: '#8B5CF6',
   },
   assetItemRow: {
     flexDirection: 'row',
@@ -1678,7 +1681,7 @@ const styles = StyleSheet.create({
   refreshButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
   },
   positionsLoading: {
     alignItems: 'center',
@@ -1704,12 +1707,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
   },
   retryButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: '#8B5CF6',
   },
   positionsEmpty: {
     alignItems: 'center',
