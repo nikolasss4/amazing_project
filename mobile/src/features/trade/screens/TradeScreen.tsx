@@ -1001,7 +1001,8 @@ const styles = StyleSheet.create({
   profileWalletContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: theme.spacing.sm,
+    paddingLeft: theme.spacing.md,
   },
   walletButton: {
     flexDirection: 'row',
