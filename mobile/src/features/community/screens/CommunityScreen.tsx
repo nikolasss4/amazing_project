@@ -34,6 +34,14 @@ const SEEDED_LEADERBOARD_USERS: LeaderboardEntry[] = [
   { rank: 5, userId: '5', username: 'SwingMaster', returnPercent: 87.4, winRate: 71, tradesCount: 29 },
   { rank: 6, userId: '6', username: 'TradeGuru', returnPercent: 76.9, winRate: 63, tradesCount: 41 },
   { rank: 7, userId: '7', username: 'MarketWhiz', returnPercent: 65.3, winRate: 69, tradesCount: 33 },
+  { rank: 8, userId: '8', username: 'CryptoApe', returnPercent: 92.1, winRate: 66, tradesCount: 54 },
+  { rank: 9, userId: '9', username: 'BullRunner', returnPercent: 84.7, winRate: 70, tradesCount: 43 },
+  { rank: 10, userId: '10', username: 'MoonShot', returnPercent: 79.5, winRate: 64, tradesCount: 36 },
+  { rank: 11, userId: '11', username: 'DiamondHands', returnPercent: 73.2, winRate: 67, tradesCount: 48 },
+  { rank: 12, userId: '12', username: 'CryptoWhale', returnPercent: 88.9, winRate: 69, tradesCount: 39 },
+  { rank: 13, userId: '13', username: 'TraderX', returnPercent: 81.4, winRate: 65, tradesCount: 42 },
+  { rank: 14, userId: '14', username: 'BlockChain', returnPercent: 71.8, winRate: 68, tradesCount: 35 },
+  { rank: 15, userId: '15', username: 'DeFiMaster', returnPercent: 77.6, winRate: 71, tradesCount: 50 },
 ];
 
 /**
@@ -121,10 +129,43 @@ const CommunityScreenContent: React.FC = () => {
     return getShuffledLeaderboard(leaderboardPeriod);
   }, [leaderboardPeriod]);
 
-  // Friends leaderboard - use same seeded data for now
+  // Friends leaderboard - different users from global, with current user highlighted
   const safeFriendsLeaderboard = useMemo(() => {
-    return getShuffledLeaderboard(leaderboardPeriod);
-  }, [leaderboardPeriod]);
+    const currentUserId = userId || '3'; // Fallback to '3' (TechBull) if userId not set
+    const currentUsername = username || 'TechBull';
+    
+    // Use a different seed for friends to get different users
+    // Use period + 'friends' as seed to ensure different shuffle
+    const friendsShuffled = seededShuffle(SEEDED_LEADERBOARD_USERS, `${leaderboardPeriod}friends`);
+    
+    // Filter to show friends - exclude only top user ('1') to make it different from global
+    // This gives us users '2', '3', '4', '5', '6', '7' (6 users total)
+    // But always include current user
+    const filtered = friendsShuffled.filter(entry => {
+      // Safety check
+      if (!entry || !entry.userId) return false;
+      // Always include current user
+      if (entry.userId === currentUserId) return true;
+      // Exclude only user '1' (CryptoKing) to make friends list different from global
+      return entry.userId !== '1';
+    });
+    
+    // If current user not in filtered list, add them
+    const userInList = filtered.find(entry => entry.userId === currentUserId);
+    if (!userInList) {
+      const currentUserEntry = SEEDED_LEADERBOARD_USERS.find(entry => entry.userId === currentUserId);
+      if (currentUserEntry) {
+        filtered.push({ ...currentUserEntry, username: currentUsername });
+      }
+    }
+    
+    // Re-sort by returnPercent and reassign ranks
+    filtered.sort((a, b) => (b.returnPercent || 0) - (a.returnPercent || 0));
+    return filtered.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+    }));
+  }, [leaderboardPeriod, userId, username]);
 
   useEffect(() => {
     // Always set narratives data - no userId check needed
@@ -638,15 +679,21 @@ const CommunityScreenContent: React.FC = () => {
                   ))}
                 </View>
 
-                <View style={styles.table}>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
-                    <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
-                    <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
-                    <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
-                  </View>
+                <ScrollView 
+                  style={styles.tableScrollView}
+                  contentContainerStyle={styles.tableScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                >
+                  <View style={styles.table}>
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
+                      <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
+                      <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
+                      <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
+                    </View>
 
-                  {safeGlobalLeaderboard.map((entry) => {
+                    {safeGlobalLeaderboard.map((entry) => {
                     if (!entry || !entry.userId) return null;
                     const username = entry.username || 'Unknown';
                     return (
@@ -673,7 +720,8 @@ const CommunityScreenContent: React.FC = () => {
                       </View>
                     );
                   })}
-                </View>
+                  </View>
+                </ScrollView>
               </View>
             </GlowingBorder>
           </Animated.View>
@@ -730,20 +778,27 @@ const CommunityScreenContent: React.FC = () => {
                   ))}
                 </View>
 
-                <View style={styles.table}>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
-                    <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
-                    <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
-                    <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
-                  </View>
+                <ScrollView 
+                  style={styles.tableScrollView}
+                  contentContainerStyle={styles.tableScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                >
+                  <View style={styles.table}>
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
+                      <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
+                      <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
+                      <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
+                    </View>
 
-                  {safeFriendsLeaderboard.map((entry) => {
+                    {safeFriendsLeaderboard.map((entry) => {
                     if (!entry || !entry.userId) return null;
                     const username = entry.username || 'Unknown';
-                    const isCurrentUser = entry.userId === userId;
+                    const currentUserId = userId || '3'; // Use same fallback as in useMemo
+                    const isCurrentUser = entry.userId === currentUserId;
                     return (
-                      <View key={`${entry.userId}-${entry.rank}`} style={styles.tableRow}>
+                      <View key={`${entry.userId}-${entry.rank}`} style={[styles.tableRow, isCurrentUser && styles.tableRowYou]}>
                         <View style={styles.rankCol}>
                           <Text style={styles.rankText}>#{entry.rank || 0}</Text>
                         </View>
@@ -769,7 +824,8 @@ const CommunityScreenContent: React.FC = () => {
                       </View>
                     );
                   })}
-                </View>
+                  </View>
+                </ScrollView>
               </View>
             </GlowingBorder>
           </Animated.View>
@@ -1424,7 +1480,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 520, // Height to show header, filters, and exactly 7 rows without scrolling
+    height: 480, // Height to show header, filters, and exactly 7 rows initially
     position: 'relative',
   },
   flipCard: {
@@ -1460,6 +1516,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: theme.typography.weights.semibold,
   },
+  tableScrollView: {
+    flex: 1,
+    maxHeight: 360, // Show ~7 rows initially (7 * 48px minHeight = 336px + gaps + header padding)
+  },
+  tableScrollContent: {
+    paddingBottom: theme.spacing.sm,
+  },
   table: {
     gap: theme.spacing.sm,
   },
@@ -1481,6 +1544,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     alignItems: 'center',
     minHeight: 48, // Ensure consistent row height for 7 visible rows
+  },
+  tableRowYou: {
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    borderRadius: theme.borderRadius.md,
+    marginVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.3)',
   },
   loadingRow: {
     flexDirection: 'row',

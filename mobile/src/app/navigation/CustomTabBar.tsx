@@ -194,7 +194,9 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
             style={styles.assistantBlurView}
           />
           <LinearGradient
-            colors={['rgba(5, 8, 15, 0.25)', 'rgba(10, 15, 25, 0.22)']}
+            colors={['rgba(168, 85, 247, 0.7)', 'rgba(192, 132, 252, 0.65)', 'rgba(217, 70, 239, 0.6)', 'rgba(236, 72, 153, 0.55)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={styles.assistantGradient1}
           />
           <LinearGradient
