@@ -22,6 +22,7 @@ import { theme } from '@app/theme';
 import { useImproveStore } from '@app/store';
 import { mockScenarios, Answer } from '../models';
 import { LiquidFireBackground, LiquidFireBackgroundRef } from '../components/LiquidFireBackground';
+import { Avatar } from '../../community/components/Avatar';
 import { CandlestickChart } from '../components/CandlestickChart';
 import { ScenarioCardSkeleton } from '../components/ScenarioCardSkeleton';
 import { EmptyState } from '../components/EmptyState';
@@ -379,31 +380,14 @@ export const ImproveScreen: React.FC = () => {
         <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          {/* Left side - Profile and Lightning Points */}
-          <View style={styles.headerLeft}>
+          <View style={styles.headerTitleContainer}>
             <Avatar
               userId="3"
               username="TechBull"
               size={48}
               isYou={true}
             />
-            <Animated.View style={[styles.lightningChipContainer, lightningAnimatedStyle]}>
-              <GlassPanel style={styles.lightningChip}>
-                <View style={styles.lightningChipContent}>
-                  <Ionicons
-                    name="flash"
-                    size={18}
-                    color="#FFD700"
-                  />
-                  <Text style={styles.lightningText}>
-                    {totalXP}
-                  </Text>
-                </View>
-              </GlassPanel>
-            </Animated.View>
           </View>
-          
-          {/* Right side - Streak */}
           <View style={styles.headerRight}>
             {/* Streak indicator with pulse animation */}
             <Animated.View style={[styles.streakChipContainer, streakAnimatedStyle]}>
@@ -802,10 +786,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
   },
-  headerLeft: {
+  headerTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
+    paddingLeft: theme.spacing.md,
+  },
+  title: {
+    fontSize: theme.typography.sizes.xxl,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
   },
   headerRight: {
     flexDirection: 'row',

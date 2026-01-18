@@ -89,7 +89,6 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                         quietZone={10}
                       />
                     </View>
-                    <View style={styles.qrBorder} />
                   </View>
 
                   {/* Instructions */}
@@ -97,7 +96,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
                     <Text style={styles.instructionsText}>
                       Share this QR code with friends to connect
                     </Text>
-                    <Text style={styles.usernameText}>@{username}</Text>
+                    <Text style={styles.usernameText}>{username}</Text>
                   </View>
                 </LinearGradient>
               </Pressable>
@@ -174,13 +173,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 10,
-  },
-  qrBorder: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: theme.borderRadius.lg,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 107, 53, 0.3)',
-    pointerEvents: 'none',
   },
   instructions: {
     alignItems: 'center',

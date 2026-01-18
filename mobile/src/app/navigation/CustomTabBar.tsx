@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, StyleSheet, Platform, Text } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -208,7 +208,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({
           />
         </View>
         <AnimatedPressable onPress={handleAssistantPress} style={styles.assistantCircle}>
-          <Ionicons name="sparkles" size={24} color="rgba(200, 210, 220, 0.9)" />
+          <Text style={styles.assistantQuestionMark}>?</Text>
         </AnimatedPressable>
       </View>
     </View>
@@ -324,5 +324,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(80, 90, 100, 0.2)',
+  },
+  assistantQuestionMark: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: 'rgba(200, 210, 220, 0.9)',
   },
 });
