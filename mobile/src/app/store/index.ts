@@ -14,43 +14,94 @@ const getApiBaseUrl = () => {
   return 'http://10.0.11.138:8000';
 };
 
+// Asset with weight for hedge trades
+export interface HedgeAsset {
+  symbol: string;
+  weight: number; // 1-99 percentage
+}
+
 interface TradeState {
   selectedTheme: TradeTheme | null;
   selectedPair: TradePair | null;
   tradeType: 'theme' | 'pair' | 'single' | 'basket';
+  tradeMode: 'simple' | 'hedge'; // New: Simple Trade vs Hedge
   orderType: 'market' | 'limit';
   amount: string;
   side: 'long' | 'short';
-  // For pair trading - user selected assets
+  // For simple trade - user selected assets (2 tokens)
   selectedLongAsset: string | null;
   selectedShortAsset: string | null;
+  // For hedge trade - multiple assets with weights (up to 4 each)
+  hedgeLongAssets: HedgeAsset[];
+  hedgeShortAssets: HedgeAsset[];
   setSelectedTheme: (theme: TradeTheme | null) => void;
   setSelectedPair: (pair: TradePair | null) => void;
   setTradeType: (type: 'theme' | 'pair' | 'single' | 'basket') => void;
+  setTradeMode: (mode: 'simple' | 'hedge') => void;
   setOrderType: (type: 'market' | 'limit') => void;
   setAmount: (amount: string) => void;
   setSide: (side: 'long' | 'short') => void;
   setSelectedLongAsset: (asset: string | null) => void;
   setSelectedShortAsset: (asset: string | null) => void;
+  // Hedge asset management
+  addHedgeLongAsset: (asset: HedgeAsset) => void;
+  removeHedgeLongAsset: (symbol: string) => void;
+  updateHedgeLongAssetWeight: (symbol: string, weight: number) => void;
+  addHedgeShortAsset: (asset: HedgeAsset) => void;
+  removeHedgeShortAsset: (symbol: string) => void;
+  updateHedgeShortAssetWeight: (symbol: string, weight: number) => void;
+  clearHedgeAssets: () => void;
 }
 
 export const useTradeStore = create<TradeState>((set) => ({
   selectedTheme: null,
   selectedPair: null,
   tradeType: 'pair',
+  tradeMode: 'simple',
   orderType: 'market',
   amount: '',
   side: 'long',
   selectedLongAsset: null,
   selectedShortAsset: null,
+  hedgeLongAssets: [],
+  hedgeShortAssets: [],
   setSelectedTheme: (theme) => set({ selectedTheme: theme }),
   setSelectedPair: (pair) => set({ selectedPair: pair }),
   setTradeType: (type) => set({ tradeType: type }),
+  setTradeMode: (mode) => set({ tradeMode: mode }),
   setOrderType: (type) => set({ orderType: type }),
   setAmount: (amount) => set({ amount }),
   setSide: (side) => set({ side }),
   setSelectedLongAsset: (asset) => set({ selectedLongAsset: asset }),
   setSelectedShortAsset: (asset) => set({ selectedShortAsset: asset }),
+  // Hedge asset management
+  addHedgeLongAsset: (asset) => set((state) => {
+    if (state.hedgeLongAssets.length >= 4) return state;
+    if (state.hedgeLongAssets.find(a => a.symbol === asset.symbol)) return state;
+    return { hedgeLongAssets: [...state.hedgeLongAssets, asset] };
+  }),
+  removeHedgeLongAsset: (symbol) => set((state) => ({
+    hedgeLongAssets: state.hedgeLongAssets.filter(a => a.symbol !== symbol)
+  })),
+  updateHedgeLongAssetWeight: (symbol, weight) => set((state) => ({
+    hedgeLongAssets: state.hedgeLongAssets.map(a => 
+      a.symbol === symbol ? { ...a, weight: Math.max(1, Math.min(99, weight)) } : a
+    )
+  })),
+  addHedgeShortAsset: (asset) => set((state) => {
+    if (state.hedgeShortAssets.length >= 4) return state;
+    if (state.hedgeShortAssets.find(a => a.symbol === asset.symbol)) return state;
+    return { hedgeShortAssets: [...state.hedgeShortAssets, asset] };
+  }),
+  removeHedgeShortAsset: (symbol) => set((state) => ({
+    hedgeShortAssets: state.hedgeShortAssets.filter(a => a.symbol !== symbol)
+  })),
+  updateHedgeShortAssetWeight: (symbol, weight) => set((state) => ({
+    hedgeShortAssets: state.hedgeShortAssets.map(a => 
+      a.symbol === symbol ? { ...a, weight: Math.max(1, Math.min(99, weight)) } : a
+    )
+  })),
+  clearHedgeAssets: () => set({ hedgeLongAssets: [], hedgeShortAssets: [] }),
 }));
 
 // Learn Store
