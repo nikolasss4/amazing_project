@@ -307,7 +307,6 @@ export const TradeScreen: React.FC = () => {
 
   // Render a single trade card
   const renderTradeCard = (trade: BetTrade, index: number) => {
-    const isComplete = trade.asset && trade.direction;
     const isChartExpanded = expandedCharts.has(trade.id);
     const hasAsset = trade.asset !== null;
     
@@ -452,12 +451,6 @@ export const TradeScreen: React.FC = () => {
             )}
           </View>
 
-          {/* Completion indicator */}
-          {isComplete && (
-            <View style={styles.completeBadge}>
-              <Ionicons name="checkmark" size={12} color="#FFF" />
-            </View>
-          )}
         </View>
       </View>
     );
@@ -1279,17 +1272,6 @@ const styles = StyleSheet.create({
   },
   directionChoiceTextSelected: {
     color: '#FFF',
-  },
-  completeBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: theme.colors.success,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   // Trade card layout
