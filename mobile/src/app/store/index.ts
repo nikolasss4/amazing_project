@@ -67,7 +67,7 @@ interface LearnState {
 export const useLearnStore = create<LearnState>((set) => ({
   currentScenario: null,
   totalXP: 0,
-  streak: 0,
+  streak: 7,
   answeredToday: 0,
   setCurrentScenario: (scenario) => set({ currentScenario: scenario }),
   addXP: (xp) => set((state) => ({ totalXP: state.totalXP + xp })),

@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlowingBorder } from '@ui/primitives/GlowingBorder';
 import { theme } from '@app/theme';
 import * as Haptics from 'expo-haptics';
-import { useLearnStore, useUserStore } from '@app/store';
+import { useImproveStore, useLearnStore, useUserStore } from '@app/store';
 import { LeaderboardEntry } from '../models';
 import { QRCodeModal } from '../components/QRCodeModal';
 import { QRScannerModal } from '../components/QRScannerModal';
@@ -92,7 +92,8 @@ function getShuffledLeaderboard(period: LeaderboardPeriod): LeaderboardEntry[] {
 const CommunityScreenContent: React.FC = () => {
 
   const ToastAndroid = Platform.OS === 'android' ? require('react-native').ToastAndroid : null;
-  const { streak, totalXP } = useLearnStore();
+  const { streak: daysStreak } = useLearnStore(); // Daily streak (days)
+  const { totalXP } = useImproveStore(); // Lightning points (synchronized with Improve page)
   const { userId, username, setUser } = useUserStore();
 
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
@@ -578,12 +579,14 @@ const CommunityScreenContent: React.FC = () => {
         <View style={styles.greetingSection}>
           <View style={styles.greetingStats}>
             <View style={styles.statItem}>
-              <Text style={styles.statIcon}>🔥</Text>
-              <Text style={styles.statValue}>7-day streak</Text>
+              <Ionicons name="flame" size={20} color={daysStreak >= 7 ? theme.colors.warning : theme.colors.textSecondary} />
+              <Text style={[styles.statValue, daysStreak >= 7 && { color: theme.colors.warning }]}>
+                {daysStreak > 0 ? daysStreak : 0}-day streak
+              </Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statIcon}>⚡</Text>
-              <Text style={styles.statValue}>55 pts</Text>
+              <Ionicons name="flash" size={20} color="#FFD700" />
+              <Text style={[styles.statValue, { color: '#FFD700' }]}>{totalXP} pts</Text>
             </View>
           </View>
         </View>
