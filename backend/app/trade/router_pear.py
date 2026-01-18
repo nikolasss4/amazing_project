@@ -204,20 +204,22 @@ async def authenticate_wallet(
     service: PearServiceDep = None,
 ) -> dict[str, Any]:
     """
-    Authenticate a wallet address with Pear Protocol.
+    Authenticate a wallet address with Pear Protocol and setup agent wallet.
     
-    This endpoint performs the complete authentication flow:
+    This endpoint performs the complete authentication and agent wallet flow:
     1. Gets EIP-712 message from Pear API for the user's address
     2. Signs it using the provided private key
     3. Calls /auth/login with the signature
-    4. Returns success/failure
+    4. Checks agent wallet status
+    5. Creates agent wallet if needed
+    6. Returns status and next steps for approval
     
     Args:
         request: Request body containing address and privateKey
         address: (deprecated) Query param for backward compatibility
         
     Returns:
-        Success status and access token if successful
+        Success status, access token, and agent wallet status
     """
     # Get address from request body or query param (backward compatibility)
     wallet_address = request.address if request else address
@@ -282,6 +284,77 @@ async def authenticate_wallet(
         logger.info(f"Login successful")
         logger.info(f"  Access token: {access_token[:20]}...")
         
+        # Step 4: Check/Setup Agent Wallet
+        logger.info("Step 4: Setting up agent wallet...")
+        agent_wallet_info = {
+            "status": "NOT_CHECKED",
+            "address": None,
+            "needsApproval": False,
+            "approvalInstructions": None
+        }
+        
+        try:
+            # Check current agent wallet status
+            wallet_status = await service.get_agent_wallet()
+            logger.info(f"Agent wallet status: {wallet_status.status}")
+            
+            if wallet_status.status == AgentWalletStatus.ACTIVE:
+                # Agent wallet is ready
+                agent_wallet_info = {
+                    "status": "ACTIVE",
+                    "address": wallet_status.wallet_address,
+                    "needsApproval": False,
+                    "message": "Agent wallet is active and ready for trading"
+                }
+                logger.info(f"Agent wallet is ACTIVE: {wallet_status.wallet_address}")
+                
+            elif wallet_status.status == AgentWalletStatus.PENDING_APPROVAL:
+                # Wallet exists but needs approval on Hyperliquid
+                agent_wallet_info = {
+                    "status": "PENDING_APPROVAL",
+                    "address": wallet_status.wallet_address,
+                    "needsApproval": True,
+                    "message": "Agent wallet needs approval on Hyperliquid",
+                    "approvalInstructions": {
+                        "step1": "Go to Hyperliquid exchange",
+                        "step2": "Connect your wallet",
+                        "step3": f"Approve agent address: {wallet_status.wallet_address}",
+                        "step4": "Set agent name to 'PearProtocol'",
+                        "note": "The approval will be valid for 180 days"
+                    }
+                }
+                logger.info(f"Agent wallet PENDING_APPROVAL: {wallet_status.wallet_address}")
+                
+            elif wallet_status.status in [AgentWalletStatus.NOT_FOUND, AgentWalletStatus.EXPIRED]:
+                # Need to create new agent wallet
+                logger.info(f"Creating new agent wallet (status was: {wallet_status.status})...")
+                new_wallet = await service.create_agent_wallet()
+                
+                agent_wallet_info = {
+                    "status": "CREATED",
+                    "address": new_wallet.wallet_address,
+                    "needsApproval": True,
+                    "message": "New agent wallet created - needs approval on Hyperliquid",
+                    "approvalInstructions": {
+                        "step1": "Go to Hyperliquid exchange (app.hyperliquid.xyz)",
+                        "step2": "Connect your wallet",
+                        "step3": f"Approve agent address: {new_wallet.wallet_address}",
+                        "step4": "Set agent name to 'PearProtocol'",
+                        "note": "The approval will be valid for 180 days"
+                    }
+                }
+                logger.info(f"New agent wallet CREATED: {new_wallet.wallet_address}")
+                
+        except Exception as agent_error:
+            logger.warning(f"Agent wallet setup warning: {str(agent_error)}")
+            agent_wallet_info = {
+                "status": "ERROR",
+                "address": None,
+                "needsApproval": False,
+                "error": str(agent_error),
+                "message": "Could not setup agent wallet - trading may be limited"
+            }
+        
         logger.info("=" * 80)
         logger.info("AUTHENTICATION SUCCESSFUL")
         logger.info("=" * 80)
@@ -291,7 +364,8 @@ async def authenticate_wallet(
             "authenticated": True,
             "address": wallet_address,
             "accessToken": access_token,
-            "message": "Wallet authenticated successfully"
+            "message": "Wallet authenticated successfully",
+            "agentWallet": agent_wallet_info
         }
         
     except Exception as e:
@@ -307,6 +381,120 @@ async def authenticate_wallet(
             "address": wallet_address,
             "error": str(e),
             "message": "Failed to authenticate wallet"
+        }
+
+
+class HyperliquidSetupRequest(BaseModel):
+    """Request body for Hyperliquid setup."""
+    address: str
+    privateKey: str
+
+
+@router.post("/auth/setup-hyperliquid")
+async def setup_hyperliquid_permissions(
+    request: HyperliquidSetupRequest,
+) -> dict[str, Any]:
+    """
+    Setup Hyperliquid permissions for Pear Protocol trading.
+    
+    This endpoint performs the required one-time setup on Hyperliquid:
+    1. Approves the Pear Protocol builder fee (allows Pear to charge fees)
+    2. Approves an agent wallet for trading (allows Pear to execute trades)
+    
+    These steps are REQUIRED before you can trade through Pear Protocol.
+    Both steps require signing transactions on Hyperliquid with your wallet.
+    
+    Prerequisites:
+    - You must have deposited at least $10 USDC to Hyperliquid
+    - Your wallet must have been authenticated with Pear Protocol first
+    
+    Args:
+        request: Request body containing address and privateKey
+        
+    Returns:
+        Setup status including builder fee approval and agent wallet info
+    """
+    from app.trade.services.hyperliquid_service import get_hyperliquid_service
+    
+    wallet_address = request.address
+    private_key = request.privateKey
+    
+    if not wallet_address or not private_key:
+        return {
+            "success": False,
+            "error": "Both address and privateKey are required",
+            "message": "Please provide your wallet address and private key"
+        }
+    
+    logger.info("=" * 80)
+    logger.info("HYPERLIQUID SETUP REQUEST")
+    logger.info("=" * 80)
+    logger.info(f"Address: {wallet_address}")
+    logger.info(f"Private Key provided: Yes (masked)")
+    
+    try:
+        # Get Hyperliquid service and perform setup
+        hl_service = get_hyperliquid_service()
+        result = await hl_service.setup_pear_protocol(private_key)
+        
+        if result.get("success"):
+            logger.info("=" * 80)
+            logger.info("HYPERLIQUID SETUP SUCCESSFUL")
+            logger.info("=" * 80)
+            
+            return {
+                "success": True,
+                "address": wallet_address,
+                "message": "Hyperliquid permissions setup successfully! You can now trade through Pear Protocol.",
+                "builderFeeApproved": result.get("builder_fee_approved", False),
+                "agentWallet": {
+                    "approved": result.get("agent_wallet_approved", False),
+                    "address": result.get("agent_address"),
+                },
+                "nextSteps": "Your wallet is now fully configured for Pear Protocol trading."
+            }
+        else:
+            errors = result.get("errors", [])
+            error_msg = result.get("error", "Unknown error")
+            
+            logger.error("=" * 80)
+            logger.error("HYPERLIQUID SETUP FAILED")
+            logger.error(f"Errors: {errors or error_msg}")
+            logger.error("=" * 80)
+            
+            return {
+                "success": False,
+                "address": wallet_address,
+                "error": error_msg if error_msg else "; ".join(errors),
+                "message": "Failed to setup Hyperliquid permissions",
+                "builderFeeApproved": result.get("builder_fee_approved", False),
+                "agentWalletApproved": result.get("agent_wallet_approved", False),
+                "details": errors,
+                "troubleshooting": [
+                    "Make sure you have deposited at least $10 USDC to Hyperliquid",
+                    "Go to app.hyperliquid.xyz and connect your wallet first",
+                    "Ensure your private key is correct",
+                    "Try again in a few minutes if Hyperliquid is under high load"
+                ]
+            }
+            
+    except Exception as e:
+        logger.error("=" * 80)
+        logger.error("HYPERLIQUID SETUP EXCEPTION")
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error("=" * 80)
+        
+        return {
+            "success": False,
+            "address": wallet_address,
+            "error": str(e),
+            "message": "Exception during Hyperliquid setup",
+            "troubleshooting": [
+                "Make sure you have deposited at least $10 USDC to Hyperliquid",
+                "Go to app.hyperliquid.xyz and connect your wallet first",
+                "Ensure your private key is correct"
+            ]
         }
 
 

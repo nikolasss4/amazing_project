@@ -27,6 +27,7 @@ const STORAGE_KEY_REFRESH_TOKEN = '@pear_refresh_token';
 const STORAGE_KEY_WALLET_ADDRESS = '@wallet_address';
 
 export interface EIP712Message {
+  primaryType?: string;
   domain: {
     name: string;
     version: string;
@@ -45,6 +46,7 @@ export interface EIP712Message {
     timestamp: number;
     action: string;
   };
+  timestamp: number; // Root level timestamp from Pear API response
 }
 
 export interface AuthTokens {
@@ -91,14 +93,14 @@ class WalletService {
     console.log('🌐 Platform:', Platform.OS);
     console.log('📡 API Base URL:', API_BASE_URL);
     console.log('📡 Full URL:', url);
-    console.log('📦 Params:', { address: address.toLowerCase(), client_id: 'APITRADER' });
+    console.log('📦 Params:', { address: address.toLowerCase(), clientId: 'HLHackathon1' });
     
     try {
       console.log('⏳ Making GET request...');
       const response = await axios.get(url, {
         params: {
           address: address.toLowerCase(),
-          client_id: 'APITRADER'
+          clientId: 'HLHackathon1'
         },
         timeout: 10000, // 10 second timeout
       });
@@ -172,7 +174,8 @@ class WalletService {
    */
   async authenticateWithSignature(
     walletAddress: string,
-    signature: string
+    signature: string,
+    timestamp: number
   ): Promise<AuthTokens> {
     const url = `${API_BASE_URL}/api/trade/pear/auth/login`;
     console.log('\n' + '='.repeat(80));
@@ -181,14 +184,15 @@ class WalletService {
     console.log('📍 Address:', walletAddress);
     console.log('📡 URL:', url);
     console.log('✍️  Signature:', signature.substring(0, 20) + '...');
+    console.log('🕐 Timestamp:', timestamp);
     
     try {
       console.log('⏳ Making POST request...');
       const response = await axios.post(url, {
         method: 'eip712',
         address: walletAddress.toLowerCase(),
-        client_id: 'APITRADER',
-        details: { signature }
+        clientId: 'HLHackathon1',
+        details: { signature, timestamp }
       }, {
         timeout: 10000,
       });
@@ -235,8 +239,10 @@ class WalletService {
       const signature = await this.signMessage(eip712Data, walletAddress);
 
       // 3. Authenticate with Pear Protocol
+      // Use root-level timestamp from response, fallback to message.timestamp
+      const timestamp = eip712Data.timestamp || eip712Data.message.timestamp;
       console.log('Step 3/4: Authenticating...');
-      const tokens = await this.authenticateWithSignature(walletAddress, signature);
+      const tokens = await this.authenticateWithSignature(walletAddress, signature, timestamp);
 
       // 4. Check/create agent wallet
       console.log('Step 4/4: Setting up agent wallet...');

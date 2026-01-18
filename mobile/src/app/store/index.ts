@@ -160,6 +160,22 @@ const getApiBaseUrl = () => {
 
 type AuthStep = 'idle' | 'getting_message' | 'signing' | 'authenticating' | 'setting_up_wallet' | 'complete';
 
+// Agent wallet status from Pear Protocol
+interface AgentWalletInfo {
+  status: 'NOT_CHECKED' | 'ACTIVE' | 'PENDING_APPROVAL' | 'CREATED' | 'ERROR';
+  address: string | null;
+  needsApproval: boolean;
+  message?: string;
+  error?: string;
+  approvalInstructions?: {
+    step1: string;
+    step2: string;
+    step3: string;
+    step4: string;
+    note: string;
+  };
+}
+
 interface WalletState {
   walletAddress: string | null;
   privateKey: string | null;
@@ -170,11 +186,13 @@ interface WalletState {
   error: string | null;
   accessToken: string | null;
   authError: string | null;
+  agentWallet: AgentWalletInfo | null;
   connect: (address: string, privateKey?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   initialize: () => Promise<void>;
   getAccessToken: () => string | null;
   getPrivateKey: () => string | null;
+  getAgentWallet: () => AgentWalletInfo | null;
 }
 
 const isValidEthAddress = (address: string): boolean => {
@@ -197,6 +215,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   error: null,
   accessToken: null,
   authError: null,
+  agentWallet: null,
   
   connect: async (address: string, privateKey?: string) => {
     // Validate address format
@@ -211,7 +230,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       throw new Error('Invalid private key format. Please enter a valid 64-character hex private key.');
     }
     
-    set({ isAuthenticating: true, isConnecting: true, authStep: 'getting_message', error: null, authError: null });
+    set({ isAuthenticating: true, isConnecting: true, authStep: 'getting_message', error: null, authError: null, agentWallet: null });
     
     try {
       const apiBaseUrl = getApiBaseUrl();
@@ -259,6 +278,62 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         await AsyncStorage.setItem(ACCESS_TOKEN_KEY, result.accessToken);
       }
       
+      // Parse agent wallet info from response
+      let agentWalletInfo: AgentWalletInfo = result.agentWallet || {
+        status: 'NOT_CHECKED',
+        address: null,
+        needsApproval: false,
+      };
+      
+      console.log('Agent wallet status:', agentWalletInfo.status);
+      
+      // Step 2: Setup Hyperliquid permissions (builder fee + agent wallet)
+      // This is required for trading through Pear Protocol
+      if (trimmedPrivateKey && agentWalletInfo.needsApproval) {
+        console.log('\n' + '='.repeat(80));
+        console.log('SETTING UP HYPERLIQUID PERMISSIONS');
+        console.log('='.repeat(80));
+        
+        try {
+          const hlSetupUrl = `${apiBaseUrl}/api/trade/pear/auth/setup-hyperliquid`;
+          console.log('Calling:', hlSetupUrl);
+          
+          const hlResponse = await fetch(hlSetupUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              address: trimmedAddress,
+              privateKey: trimmedPrivateKey,
+            }),
+          });
+          
+          const hlResult = await hlResponse.json();
+          console.log('Hyperliquid setup result:', JSON.stringify(hlResult, null, 2));
+          
+          if (hlResult.success) {
+            console.log('Hyperliquid permissions setup successfully!');
+            agentWalletInfo = {
+              status: 'ACTIVE',
+              address: hlResult.agentWallet?.address || agentWalletInfo.address,
+              needsApproval: false,
+              message: 'Agent wallet is active and ready for trading',
+            };
+          } else {
+            console.log('Hyperliquid setup had issues:', hlResult.error || hlResult.message);
+            // Keep the original status - user may need to setup manually
+            agentWalletInfo.message = hlResult.message || 'Hyperliquid setup incomplete - trading may be limited';
+          }
+        } catch (hlError) {
+          console.error('Hyperliquid setup error:', hlError);
+          // Don't fail the whole connection - Pear auth succeeded
+          agentWalletInfo.message = 'Hyperliquid setup failed - please try again or setup manually';
+        }
+        
+        console.log('='.repeat(80) + '\n');
+      }
+      
       // Update state
       set({ 
         walletAddress: trimmedAddress,
@@ -270,6 +345,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         error: null,
         accessToken: result.accessToken || null,
         authError: null,
+        agentWallet: agentWalletInfo,
       });
       
       console.log('Wallet connected and authenticated:', trimmedAddress);
@@ -296,6 +372,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         error: null,
         accessToken: null,
         authError: null,
+        agentWallet: null,
       });
       
       console.log('Wallet disconnected');
@@ -334,6 +411,10 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   
   getPrivateKey: () => {
     return get().privateKey;
+  },
+  
+  getAgentWallet: () => {
+    return get().agentWallet;
   },
 }));
 

@@ -287,8 +287,8 @@ class PearLoginRequest(BaseModel):
 
     method: str = Field(default="eip712", description="Authentication method")
     address: str = Field(..., description="Wallet address")
-    clientId: str = Field(default="HLHackathon9", alias="client_id", description="Client ID")
-    details: dict[str, str] = Field(..., description="Contains signature and timestamp")
+    clientId: str = Field(default="HLHackathon1", alias="client_id", description="Client ID")
+    details: dict[str, Any] = Field(..., description="Contains signature and timestamp")
     
     class Config:
         populate_by_name = True

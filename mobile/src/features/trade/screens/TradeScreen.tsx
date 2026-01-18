@@ -18,6 +18,7 @@ import {
   Pressable,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -100,7 +101,7 @@ export const TradeScreen: React.FC = () => {
   };
 
   // Wallet state
-  const { isConnected, walletAddress, connect, disconnect, initialize, getAccessToken } = useWalletStore();
+  const { isConnected, walletAddress, connect, disconnect, initialize, getAccessToken, agentWallet } = useWalletStore();
 
   // Fetch open positions from Pear Protocol
   const fetchOpenPositions = useCallback(async () => {
@@ -895,10 +896,47 @@ export const TradeScreen: React.FC = () => {
 
               {isConnected ? (
                 <View style={styles.walletModalContent}>
-                  <Ionicons name="checkmark-circle" size={48} color={theme.colors.success} />
+                  <Ionicons 
+                    name={agentWallet?.needsApproval ? "alert-circle" : "checkmark-circle"} 
+                    size={48} 
+                    color={agentWallet?.needsApproval ? theme.colors.warning : theme.colors.success} 
+                  />
                   <View style={styles.walletAddressBox}>
                     <Text style={styles.walletAddressText}>{walletAddress}</Text>
                   </View>
+                  
+                  {/* Agent Wallet Status */}
+                  {agentWallet?.needsApproval ? (
+                    <View style={styles.agentWalletWarningBox}>
+                      <View style={styles.agentWalletWarningHeader}>
+                        <Ionicons name="key-outline" size={20} color={theme.colors.warning} />
+                        <Text style={styles.agentWalletWarningTitle}>Agent Wallet Approval Required</Text>
+                      </View>
+                      <Text style={styles.agentWalletWarningText}>
+                        To enable trading through Pear Protocol, approve the agent wallet on Hyperliquid.
+                      </Text>
+                      {agentWallet?.address && (
+                        <View style={styles.agentAddressContainer}>
+                          <Text style={styles.agentAddressLabel}>Agent Address:</Text>
+                          <Text style={styles.agentAddressValue} selectable>{agentWallet.address}</Text>
+                        </View>
+                      )}
+                      {agentWallet?.approvalInstructions && (
+                        <View style={styles.approvalSteps}>
+                          <Text style={styles.approvalStepText}>1. {agentWallet.approvalInstructions.step1}</Text>
+                          <Text style={styles.approvalStepText}>2. {agentWallet.approvalInstructions.step2}</Text>
+                          <Text style={styles.approvalStepText}>3. {agentWallet.approvalInstructions.step3}</Text>
+                          <Text style={styles.approvalStepText}>4. {agentWallet.approvalInstructions.step4}</Text>
+                        </View>
+                      )}
+                    </View>
+                  ) : agentWallet?.status === 'ACTIVE' ? (
+                    <View style={styles.agentWalletSuccessBox}>
+                      <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
+                      <Text style={styles.agentWalletSuccessText}>Agent wallet active - ready to trade!</Text>
+                    </View>
+                  ) : null}
+                  
                   <Button variant="error" onPress={handleDisconnectWallet} fullWidth size="lg">
                     Disconnect
                   </Button>
@@ -1640,6 +1678,68 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: theme.colors.error,
+  },
+  // Agent Wallet Styles
+  agentWalletWarningBox: {
+    width: '100%',
+    backgroundColor: 'rgba(243, 156, 18, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(243, 156, 18, 0.3)',
+    gap: 12,
+  },
+  agentWalletWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  agentWalletWarningTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.warning,
+  },
+  agentWalletWarningText: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: 18,
+  },
+  agentAddressContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: 8,
+    padding: 10,
+  },
+  agentAddressLabel: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginBottom: 4,
+  },
+  agentAddressValue: {
+    fontSize: 11,
+    color: theme.colors.warning,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  approvalSteps: {
+    gap: 6,
+  },
+  approvalStepText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    paddingLeft: 8,
+  },
+  agentWalletSuccessBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    padding: 12,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: 8,
+  },
+  agentWalletSuccessText: {
+    flex: 1,
+    fontSize: 13,
+    color: theme.colors.success,
   },
   connectingHint: {
     marginTop: 12,

@@ -113,12 +113,15 @@ const AUTH_STEP_MESSAGES: Record<string, string> = {
 };
 
 export const WalletModal: React.FC<WalletModalProps> = ({ visible, onClose }) => {
-  const { isConnected, walletAddress, isConnecting, authStep, error, connect, disconnect } = useWalletStore();
+  const { isConnected, walletAddress, isConnecting, authStep, error, agentWallet, connect, disconnect } = useWalletStore();
   const [inputAddress, setInputAddress] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   
   // Get the current step message for display
   const currentStepMessage = AUTH_STEP_MESSAGES[authStep] || 'Connecting...';
+  
+  // Check if agent wallet needs approval
+  const needsAgentWalletApproval = agentWallet?.needsApproval === true;
 
   const handleConnect = async () => {
     console.log('\n' + '='.repeat(80));
@@ -195,7 +198,11 @@ export const WalletModal: React.FC<WalletModalProps> = ({ visible, onClose }) =>
               // Connected State
               <View style={styles.content}>
                 <View style={styles.connectedBadge}>
-                  <Ionicons name="checkmark-circle" size={48} color={theme.colors.success} />
+                  <Ionicons 
+                    name={needsAgentWalletApproval ? "alert-circle" : "checkmark-circle"} 
+                    size={48} 
+                    color={needsAgentWalletApproval ? theme.colors.warning : theme.colors.success} 
+                  />
                 </View>
 
                 <Text style={styles.connectedLabel}>Connected Address</Text>
@@ -208,12 +215,64 @@ export const WalletModal: React.FC<WalletModalProps> = ({ visible, onClose }) =>
                   </Pressable>
                 </View>
 
-                <View style={styles.infoBox}>
-                  <Ionicons name="information-circle-outline" size={20} color={theme.colors.info} />
-                  <Text style={styles.infoText}>
-                    Your wallet is connected and ready to trade on Pear Protocol
-                  </Text>
-                </View>
+                {/* Agent Wallet Status */}
+                {needsAgentWalletApproval ? (
+                  <View style={styles.agentWalletWarning}>
+                    <View style={styles.agentWalletHeader}>
+                      <Ionicons name="key-outline" size={24} color={theme.colors.warning} />
+                      <Text style={styles.agentWalletTitle}>Agent Wallet Approval Required</Text>
+                    </View>
+                    <Text style={styles.agentWalletDescription}>
+                      To enable trading through Pear Protocol, you need to approve the agent wallet on Hyperliquid.
+                    </Text>
+                    
+                    {agentWallet?.address && (
+                      <View style={styles.agentAddressBox}>
+                        <Text style={styles.agentAddressLabel}>Agent Wallet Address:</Text>
+                        <Text style={styles.agentAddressText} selectable>
+                          {agentWallet.address}
+                        </Text>
+                      </View>
+                    )}
+                    
+                    {agentWallet?.approvalInstructions && (
+                      <View style={styles.instructionsBox}>
+                        <Text style={styles.instructionsTitle}>How to approve:</Text>
+                        <Text style={styles.instructionStep}>1. {agentWallet.approvalInstructions.step1}</Text>
+                        <Text style={styles.instructionStep}>2. {agentWallet.approvalInstructions.step2}</Text>
+                        <Text style={styles.instructionStep}>3. {agentWallet.approvalInstructions.step3}</Text>
+                        <Text style={styles.instructionStep}>4. {agentWallet.approvalInstructions.step4}</Text>
+                        <Text style={styles.instructionNote}>{agentWallet.approvalInstructions.note}</Text>
+                      </View>
+                    )}
+                    
+                    <Pressable 
+                      style={styles.hyperliquidButton}
+                      onPress={() => {
+                        // Open Hyperliquid in browser
+                        console.log('Opening Hyperliquid...');
+                        // Linking.openURL('https://app.hyperliquid.xyz');
+                      }}
+                    >
+                      <Ionicons name="open-outline" size={18} color="#FFF" />
+                      <Text style={styles.hyperliquidButtonText}>Open Hyperliquid</Text>
+                    </Pressable>
+                  </View>
+                ) : agentWallet?.status === 'ACTIVE' ? (
+                  <View style={styles.infoBox}>
+                    <Ionicons name="checkmark-circle" size={20} color={theme.colors.success} />
+                    <Text style={styles.successText}>
+                      Agent wallet is active and ready for trading!
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.infoBox}>
+                    <Ionicons name="information-circle-outline" size={20} color={theme.colors.info} />
+                    <Text style={styles.infoText}>
+                      Your wallet is connected and ready to trade on Pear Protocol
+                    </Text>
+                  </View>
+                )}
 
                 <View style={styles.buttonContainer}>
                   <Button
@@ -508,5 +567,86 @@ const styles = StyleSheet.create({
   progressSteps: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  // Agent Wallet Styles
+  agentWalletWarning: {
+    backgroundColor: 'rgba(243, 156, 18, 0.1)',
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(243, 156, 18, 0.3)',
+    gap: theme.spacing.sm,
+  },
+  agentWalletHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  agentWalletTitle: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.warning,
+  },
+  agentWalletDescription: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    lineHeight: theme.typography.lineHeights.relaxed * theme.typography.sizes.sm,
+  },
+  agentAddressBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: theme.borderRadius.sm,
+    padding: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  agentAddressLabel: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.xs,
+  },
+  agentAddressText: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.warning,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  instructionsBox: {
+    marginTop: theme.spacing.sm,
+    gap: theme.spacing.xs,
+  },
+  instructionsTitle: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.xs,
+  },
+  instructionStep: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    paddingLeft: theme.spacing.sm,
+  },
+  instructionNote: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: theme.spacing.xs,
+  },
+  hyperliquidButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.warning,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+  },
+  hyperliquidButtonText: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: '#FFF',
+  },
+  successText: {
+    flex: 1,
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.success,
   },
 });
