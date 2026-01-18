@@ -70,7 +70,14 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef })
 
     const userMessage = inputText.trim();
     setInputText('');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
 
     // Add user message
     addMessage({
@@ -103,12 +110,26 @@ export const AssistantOverlay: React.FC<AssistantOverlayProps> = ({ screenRef })
   };
 
   const handleClose = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
     setIsOpen(false);
   };
 
   const handleClear = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Safe haptic call - no-op on web
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch (error) {
+        // Silently fail if haptics are not available
+      }
+    }
     clearChat();
   };
 
