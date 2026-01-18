@@ -19,11 +19,70 @@ import { QRCodeModal } from '../components/QRCodeModal';
 import { QRScannerModal } from '../components/QRScannerModal';
 import { CommunityService, MarketMessage, StanceType, StanceData } from '../services/CommunityService';
 import { CommunityNarrative, useNarratives } from '../hooks/useCommunityData';
+import { ErrorBoundary } from '@ui/components/ErrorBoundary';
+import { Avatar } from '../components/Avatar';
 
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
 
-export const CommunityScreen: React.FC = () => {
+// Seeded leaderboard data - 7 users with avatars
+const SEEDED_LEADERBOARD_USERS: LeaderboardEntry[] = [
+  { rank: 1, userId: '1', username: 'CryptoKing', returnPercent: 142.5, winRate: 78, tradesCount: 45 },
+  { rank: 2, userId: '2', username: 'WallStreetBear', returnPercent: 128.3, winRate: 72, tradesCount: 52 },
+  { rank: 3, userId: '3', username: 'TechBull', returnPercent: 115.7, winRate: 68, tradesCount: 38 },
+  { rank: 4, userId: '4', username: 'DayTraderPro', returnPercent: 98.2, winRate: 65, tradesCount: 67 },
+  { rank: 5, userId: '5', username: 'SwingMaster', returnPercent: 87.4, winRate: 71, tradesCount: 29 },
+  { rank: 6, userId: '6', username: 'TradeGuru', returnPercent: 76.9, winRate: 63, tradesCount: 41 },
+  { rank: 7, userId: '7', username: 'MarketWhiz', returnPercent: 65.3, winRate: 69, tradesCount: 33 },
+];
+
+/**
+ * Seeded shuffle function - shuffles array deterministically based on seed
+ * Different periods will produce different orders
+ */
+function seededShuffle<T>(array: T[], seed: string): T[] {
+  const shuffled = [...array];
+  let seedValue = 0;
+  
+  // Create a numeric seed from the string
+  for (let i = 0; i < seed.length; i++) {
+    seedValue = ((seedValue << 5) - seedValue) + seed.charCodeAt(i);
+    seedValue = seedValue & seedValue; // Convert to 32-bit integer
+  }
+  
+  // Simple seeded random number generator
+  let random = seedValue;
+  function seededRandom() {
+    random = (random * 9301 + 49297) % 233280;
+    return random / 233280;
+  }
+  
+  // Fisher-Yates shuffle with seeded random
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(seededRandom() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  
+  return shuffled;
+}
+
+/**
+ * Get shuffled leaderboard based on period
+ * Each period will have a different order
+ */
+function getShuffledLeaderboard(period: LeaderboardPeriod): LeaderboardEntry[] {
+  // Use period as seed to get consistent but different shuffles per period
+  const shuffled = seededShuffle(SEEDED_LEADERBOARD_USERS, period);
+  // Reassign ranks after shuffle
+  return shuffled.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
+  }));
+}
+
+// Wrapper component to catch any errors during render
+const CommunityScreenContent: React.FC = () => {
+
   const ToastAndroid = Platform.OS === 'android' ? require('react-native').ToastAndroid : null;
   const { streak, totalXP } = useLearnStore();
   const { userId, username, setUser } = useUserStore();
@@ -48,10 +107,6 @@ export const CommunityScreen: React.FC = () => {
   const [stanceLoading, setStanceLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
-  const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [friendsLeaderboard, setFriendsLeaderboard] = useState<LeaderboardEntry[]>([]);
   const flipRotation = useSharedValue(0);
 
   const {
@@ -61,30 +116,15 @@ export const CommunityScreen: React.FC = () => {
     refetch: refetchNarratives,
   } = useNarratives(undefined, 10, 60000); // Always fetch, use default userId in hook
 
-  // Removed userId check - narratives are always fetched with default userId
+  // Seeded leaderboard - shuffled based on period
+  const safeGlobalLeaderboard = useMemo(() => {
+    return getShuffledLeaderboard(leaderboardPeriod);
+  }, [leaderboardPeriod]);
 
-  useEffect(() => {
-    if (!userId) return;
-
-    const fetchLeaderboards = async () => {
-      try {
-        setLeaderboardLoading(true);
-        setLeaderboardError(null);
-        const [global, friendsOnly] = await Promise.all([
-          CommunityService.getLeaderboard(userId, 'global', leaderboardPeriod),
-          CommunityService.getLeaderboard(userId, 'friends', leaderboardPeriod),
-        ]);
-        setGlobalLeaderboard(global.entries);
-        setFriendsLeaderboard(friendsOnly.entries);
-      } catch (error: any) {
-        setLeaderboardError(error.message || 'Failed to load leaderboards');
-      } finally {
-        setLeaderboardLoading(false);
-      }
-    };
-
-    fetchLeaderboards();
-  }, [userId, leaderboardPeriod]);
+  // Friends leaderboard - use same seeded data for now
+  const safeFriendsLeaderboard = useMemo(() => {
+    return getShuffledLeaderboard(leaderboardPeriod);
+  }, [leaderboardPeriod]);
 
   useEffect(() => {
     // #region agent log
@@ -166,34 +206,8 @@ export const CommunityScreen: React.FC = () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
-    // On web, Alert.alert with buttons doesn't work well, so use simple alerts
-    if (Platform.OS === 'web') {
-      const choice = window.confirm('Click OK to show your QR code, or Cancel to scan a QR code');
-      if (choice) {
-        setShowQRModal(true);
-      } else {
-        setShowQRScanner(true);
-      }
-    } else {
-      Alert.alert(
-        'Add Friends',
-        'Choose an option:',
-        [
-          {
-            text: 'Show My QR Code',
-            onPress: () => setShowQRModal(true),
-          },
-          {
-            text: 'Scan QR Code',
-            onPress: () => setShowQRScanner(true),
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ]
-      );
-    }
+    // Show QR code directly without confirmation dialog
+    setShowQRModal(true);
   };
 
   const handleFriendAdded = async (friendId: string, username: string) => {
@@ -553,7 +567,7 @@ export const CommunityScreen: React.FC = () => {
         {/* Greeting Section */}
         <View style={styles.greetingSection}>
           <Text style={styles.greetingText}>
-            Hey, @alice
+            Hey, @TechBull
           </Text>
           <View style={styles.greetingStats}>
             <View style={styles.statItem}>
@@ -658,57 +672,42 @@ export const CommunityScreen: React.FC = () => {
                   ))}
                 </View>
 
-                <ScrollView 
-                  style={styles.tableScrollView}
-                  contentContainerStyle={styles.tableScrollContent}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={styles.table}>
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
-                      <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
-                      <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
-                      <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
-                    </View>
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
+                    <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
+                    <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
+                    <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
+                  </View>
 
-                    {leaderboardLoading && (
-                      <View style={styles.loadingRow}>
-                        <ActivityIndicator color="#FF6B35" />
-                        <Text style={styles.loadingText}>Loading leaderboard...</Text>
-                      </View>
-                    )}
-
-                    {leaderboardError && !leaderboardLoading && (
-                      <View style={styles.errorRow}>
-                        <Text style={styles.errorText}>{leaderboardError}</Text>
-                      </View>
-                    )}
-
-                    {!leaderboardLoading && !leaderboardError && globalLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
+                  {safeGlobalLeaderboard.map((entry) => {
+                    if (!entry || !entry.userId) return null;
+                    const username = entry.username || 'Unknown';
+                    return (
+                      <View key={`${entry.userId}-${entry.rank}`} style={styles.tableRow}>
                         <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
+                          <Text style={styles.rankText}>#{entry.rank || 0}</Text>
                         </View>
                         <View style={styles.userCol}>
-                          <View style={styles.avatar}>
-                            <Text style={styles.avatarText}>
-                              {entry.username.substring(0, 2).toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={styles.username}>{entry.username}</Text>
+                          <Avatar
+                            userId={entry.userId}
+                            username={username}
+                            size={32}
+                          />
+                          <Text style={styles.username}>{username}</Text>
                         </View>
                         <View style={styles.returnCol}>
                           <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
+                            +{entry.returnPercent?.toFixed(1) || 0}%
                           </Text>
                         </View>
                         <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
+                          <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
                         </View>
                       </View>
-                    ))}
-                  </View>
-                </ScrollView>
+                    );
+                  })}
+                </View>
               </View>
             </GlowingBorder>
           </Animated.View>
@@ -765,59 +764,46 @@ export const CommunityScreen: React.FC = () => {
                   ))}
                 </View>
 
-                <ScrollView 
-                  style={styles.tableScrollView}
-                  contentContainerStyle={styles.tableScrollContent}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={styles.table}>
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
-                      <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
-                      <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
-                      <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
-                    </View>
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.tableHeaderText, styles.rankCol]}>Rank</Text>
+                    <Text style={[styles.tableHeaderText, styles.userCol]}>User</Text>
+                    <Text style={[styles.tableHeaderText, styles.returnCol]}>Return</Text>
+                    <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
+                  </View>
 
-                    {leaderboardLoading && (
-                      <View style={styles.loadingRow}>
-                        <ActivityIndicator color="#FF6B35" />
-                        <Text style={styles.loadingText}>Loading leaderboard...</Text>
-                      </View>
-                    )}
-
-                    {leaderboardError && !leaderboardLoading && (
-                      <View style={styles.errorRow}>
-                        <Text style={styles.errorText}>{leaderboardError}</Text>
-                      </View>
-                    )}
-
-                    {!leaderboardLoading && !leaderboardError && friendsLeaderboard.map((entry) => (
-                      <View key={entry.userId} style={styles.tableRow}>
+                  {safeFriendsLeaderboard.map((entry) => {
+                    if (!entry || !entry.userId) return null;
+                    const username = entry.username || 'Unknown';
+                    const isCurrentUser = entry.userId === userId;
+                    return (
+                      <View key={`${entry.userId}-${entry.rank}`} style={styles.tableRow}>
                         <View style={styles.rankCol}>
-                          <Text style={styles.rankText}>#{entry.rank}</Text>
+                          <Text style={styles.rankText}>#{entry.rank || 0}</Text>
                         </View>
                         <View style={styles.userCol}>
-                          <View style={[styles.avatar, entry.userId === userId && styles.avatarYou]}>
-                            <Text style={styles.avatarText}>
-                              {entry.username.substring(0, 2).toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={[styles.username, entry.userId === userId && styles.usernameYou]}>
-                            {entry.username}
+                          <Avatar
+                            userId={entry.userId}
+                            username={username}
+                            size={32}
+                            isYou={isCurrentUser}
+                          />
+                          <Text style={[styles.username, isCurrentUser && styles.usernameYou]}>
+                            {username}
                           </Text>
                         </View>
                         <View style={styles.returnCol}>
                           <Text style={[styles.returnText, { color: theme.colors.bullish }]}>
-                            +{entry.returnPercent}%
+                            +{entry.returnPercent?.toFixed(1) || 0}%
                           </Text>
                         </View>
                         <View style={styles.winRateCol}>
-                          <Text style={styles.winRateText}>{entry.winRate}%</Text>
+                          <Text style={styles.winRateText}>{entry.winRate || 0}%</Text>
                         </View>
                       </View>
-                    ))}
-                  </View>
-                </ScrollView>
+                    );
+                  })}
+                </View>
               </View>
             </GlowingBorder>
           </Animated.View>
@@ -845,13 +831,36 @@ export const CommunityScreen: React.FC = () => {
               <Text style={styles.loadingText}>Loading narratives...</Text>
             )}
             {narrativesError && !narrativesLoading && (
-              <Text style={styles.errorText}>{narrativesError}</Text>
+              <View style={styles.emptyStateBlock}>
+                <Text style={styles.errorText}>Error: {narrativesError}</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Check that the backend is running on http://127.0.0.1:3000
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Make sure NEWSAPI_KEY and OPENAI_API_KEY are set in backend/.env
+                </Text>
+              </View>
             )}
             {!narrativesLoading && !narrativesError && cryptoNarratives.length === 0 && (
               <View style={styles.emptyStateBlock}>
                 <Text style={styles.emptyStateText}>No active crypto narratives right now</Text>
                 <Text style={styles.emptyStateSubtext}>
                   Last updated: {formatTimestamp(lastNarrativesUpdatedAt)}
+                </Text>
+                <Text style={[styles.emptyStateSubtext, { marginTop: theme.spacing.md, fontWeight: theme.typography.weights.semibold }]}>
+                  Setup Required:
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  1. Ensure backend is running: cd backend && npm run dev
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  2. Run setup script: cd backend && ./setup-community-data.sh
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  3. Or manually: seed sources → ingest news → build narratives
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  See COMMUNITY_DATA_SETUP.md for details
                 </Text>
               </View>
             )}
@@ -1304,11 +1313,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg, // Normal spacing lives here
     borderRadius: theme.borderRadius.lg - 2,
   },
-  glassInnerGlow: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: theme.borderRadius.lg,
-    pointerEvents: 'none',
-  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1449,7 +1453,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 500, // Height to show header, filters, and top 5 rows
+    height: 520, // Height to show header, filters, and exactly 7 rows without scrolling
     position: 'relative',
   },
   flipCard: {
@@ -1485,12 +1489,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: theme.typography.weights.semibold,
   },
-  tableScrollView: {
-    maxHeight: 380, // Height to show exactly 5 rows initially (table header + 5 rows + gaps)
-  },
-  tableScrollContent: {
-    paddingBottom: theme.spacing.xs,
-  },
   table: {
     gap: theme.spacing.sm,
   },
@@ -1509,8 +1507,9 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
     alignItems: 'center',
+    minHeight: 48, // Ensure consistent row height for 7 visible rows
   },
   loadingRow: {
     flexDirection: 'row',

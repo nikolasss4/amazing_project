@@ -6,7 +6,7 @@
 import FormData from 'form-data';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Default voice
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'xYWUvKNK6zWCgsdAK7Wi'; // Default voice
 
 export interface VoiceQueryRequest {
   screenshotBase64: string;
