@@ -1,9 +1,9 @@
 /**
  * TradeScreen - Unified "Choose Your Trade" interface
  * 
- * Users can build a bet with up to 10 pair trades, each with:
- * - A pair (Asset A vs Asset B)
- * - A choice of which asset to bet on
+ * Users can build a bet with up to 10 trades, each with:
+ * - An asset (traded against USDC)
+ * - A direction (up or down)
  * - A weight allocation
  */
 
@@ -32,28 +32,14 @@ import { TradingViewChart } from '../components/TradingViewChart';
 const QUICK_AMOUNTS = [10, 50, 100, 500];
 const MAX_TRADES = 10;
 
-// Available trading pairs
-interface TradingPair {
-  id: string;
-  asset1: string;
-  asset2: string;
-  label: string;
-}
-
-const AVAILABLE_PAIRS: TradingPair[] = [
-  { id: 'btc-usdc', asset1: 'BTC', asset2: 'USDC', label: 'BTC/USDC' },
-  { id: 'eth-usdc', asset1: 'ETH', asset2: 'USDC', label: 'ETH/USDC' },
-  { id: 'sol-usdc', asset1: 'SOL', asset2: 'USDC', label: 'SOL/USDC' },
-  { id: 'btc-eth', asset1: 'BTC', asset2: 'ETH', label: 'BTC/ETH' },
-  { id: 'eth-hype', asset1: 'ETH', asset2: 'HYPE', label: 'ETH/HYPE' },
-  { id: 'arb-eth', asset1: 'ARB', asset2: 'ETH', label: 'ARB/ETH' },
-];
+// Available assets (all traded against USDC)
+const AVAILABLE_ASSETS = ['BTC', 'ETH', 'SOL', 'HYPE', 'ARB'];
 
 // A single trade in the bet
 interface BetTrade {
   id: string;
-  pair: TradingPair | null;
-  bettingOn: 'asset1' | 'asset2' | null;
+  asset: string | null;
+  direction: 'up' | 'down' | null;
   weight: number; // Percentage (1-100)
 }
 
@@ -65,14 +51,14 @@ export const TradeScreen: React.FC = () => {
 
   // Multi-trade state
   const [trades, setTrades] = useState<BetTrade[]>([
-    { id: generateId(), pair: null, bettingOn: null, weight: 100 }
+    { id: generateId(), asset: null, direction: null, weight: 100 }
   ]);
 
   // UI state
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPairSelector, setShowPairSelector] = useState<string | null>(null); // tradeId
+  const [showAssetSelector, setShowAssetSelector] = useState<string | null>(null); // tradeId
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [walletInputAddress, setWalletInputAddress] = useState('');
   const [walletError, setWalletError] = useState<string | null>(null);
@@ -133,7 +119,7 @@ export const TradeScreen: React.FC = () => {
     
     setTrades([
       ...trades,
-      { id: generateId(), pair: null, bettingOn: null, weight: remainingWeight }
+      { id: generateId(), asset: null, direction: null, weight: remainingWeight }
     ]);
   };
 
@@ -148,16 +134,16 @@ export const TradeScreen: React.FC = () => {
     setTrades(trades.map(t => t.id === id ? { ...t, ...updates } : t));
   };
 
-  // Select pair for a trade
-  const selectPair = (pair: TradingPair) => {
-    if (!showPairSelector) return;
+  // Select asset for a trade
+  const selectAsset = (asset: string) => {
+    if (!showAssetSelector) return;
     
-    updateTrade(showPairSelector, { 
-      pair,
-      // Reset betting choice when pair changes
-      bettingOn: null
+    updateTrade(showAssetSelector, { 
+      asset,
+      // Reset direction when asset changes
+      direction: null
     });
-    setShowPairSelector(null);
+    setShowAssetSelector(null);
   };
 
   // Auto-balance weights equally
@@ -180,7 +166,7 @@ export const TradeScreen: React.FC = () => {
     
     // All trades must be complete
     const allComplete = trades.every(t => 
-      t.pair && t.bettingOn && t.weight > 0
+      t.asset && t.direction && t.weight > 0
     );
     
     if (!allComplete) return false;
@@ -199,10 +185,10 @@ export const TradeScreen: React.FC = () => {
     setError(null);
 
     try {
-      // Build multi-leg order
+      // Build multi-leg order (direction up = long asset, down = short asset)
       const legs = trades.map(t => ({
-        longAsset: t.bettingOn === 'asset1' ? t.pair!.asset1 : t.pair!.asset2,
-        shortAsset: t.bettingOn === 'asset1' ? t.pair!.asset2 : t.pair!.asset1,
+        longAsset: t.direction === 'up' ? t.asset! : 'USDC',
+        shortAsset: t.direction === 'up' ? 'USDC' : t.asset!,
         weight: t.weight,
       }));
 
@@ -221,7 +207,7 @@ export const TradeScreen: React.FC = () => {
           setShowSuccess(false);
           setAmount('');
           // Reset to single empty trade
-          setTrades([{ id: generateId(), pair: null, bettingOn: null, weight: 100 }]);
+          setTrades([{ id: generateId(), asset: null, direction: null, weight: 100 }]);
         }, 2000);
       } else {
         setError(response.error || 'Trade failed');
@@ -239,15 +225,9 @@ export const TradeScreen: React.FC = () => {
 
   // Render a single trade card
   const renderTradeCard = (trade: BetTrade, index: number) => {
-    const isComplete = trade.pair && trade.bettingOn;
+    const isComplete = trade.asset && trade.direction;
     const isChartExpanded = expandedCharts.has(trade.id);
-    const hasPair = trade.pair !== null;
-    
-    // Build chart symbol for the pair (e.g., BTCETH for BTC/ETH pair)
-    const getChartSymbol = () => {
-      if (!trade.pair) return '';
-      return `${trade.pair.asset1}${trade.pair.asset2}`;
-    };
+    const hasAsset = trade.asset !== null;
     
     return (
       <View key={trade.id} style={styles.tradeCard}>
@@ -283,70 +263,78 @@ export const TradeScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Pair selection - single button to select pair */}
+            {/* Asset selection */}
             <Pressable
-              onPress={() => setShowPairSelector(trade.id)}
-              style={[styles.pairSelector, hasPair && styles.pairSelectorSelected]}
+              onPress={() => setShowAssetSelector(trade.id)}
+              style={[styles.assetSelector, hasAsset && styles.assetSelectorSelected]}
             >
-              {trade.pair ? (
-                <View style={styles.selectedPairDisplay}>
-                  <Text style={styles.selectedPairText}>{trade.pair.label}</Text>
+              {trade.asset ? (
+                <View style={styles.selectedAssetDisplay}>
+                  <Text style={styles.selectedAssetText}>{trade.asset}/USDC</Text>
                   <Ionicons name="chevron-down" size={18} color="rgba(255,255,255,0.6)" />
                 </View>
               ) : (
-                <View style={styles.pairPlaceholder}>
-                  <Ionicons name="swap-horizontal" size={24} color="rgba(255,255,255,0.4)" />
-                  <Text style={styles.pairPlaceholderText}>Select a pair</Text>
+                <View style={styles.assetPlaceholder}>
+                  <Ionicons name="analytics" size={24} color="rgba(255,255,255,0.4)" />
+                  <Text style={styles.assetPlaceholderText}>Select an asset</Text>
                   <Ionicons name="chevron-down" size={18} color="rgba(255,255,255,0.4)" />
                 </View>
               )}
             </Pressable>
 
-            {/* Betting choice - only show when pair is selected */}
-            {hasPair && (
-              <View style={styles.bettingSection}>
-                <Text style={styles.bettingLabel}>Which asset will outperform?</Text>
-                <View style={styles.bettingChoices}>
+            {/* Direction choice - only show when asset is selected */}
+            {hasAsset && (
+              <View style={styles.directionSection}>
+                <Text style={styles.directionLabel}>Will {trade.asset} go up or down?</Text>
+                <View style={styles.directionChoices}>
                   <Pressable
-                    onPress={() => updateTrade(trade.id, { bettingOn: 'asset1' })}
+                    onPress={() => updateTrade(trade.id, { direction: 'up' })}
                     style={[
-                      styles.bettingChoice,
-                      trade.bettingOn === 'asset1' && styles.bettingChoiceSelected,
+                      styles.directionChoice,
+                      styles.directionChoiceUp,
+                      trade.direction === 'up' && styles.directionChoiceUpSelected,
                     ]}
                   >
+                    <Ionicons 
+                      name="arrow-up" 
+                      size={24} 
+                      color={trade.direction === 'up' ? '#FFF' : theme.colors.bullish} 
+                    />
                     <Text style={[
-                      styles.bettingChoiceText,
-                      trade.bettingOn === 'asset1' && styles.bettingChoiceTextSelected,
+                      styles.directionChoiceText,
+                      styles.directionChoiceTextUp,
+                      trade.direction === 'up' && styles.directionChoiceTextSelected,
                     ]}>
-                      {trade.pair!.asset1}
+                      UP
                     </Text>
-                    {trade.bettingOn === 'asset1' && (
-                      <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-                    )}
                   </Pressable>
                   <Pressable
-                    onPress={() => updateTrade(trade.id, { bettingOn: 'asset2' })}
+                    onPress={() => updateTrade(trade.id, { direction: 'down' })}
                     style={[
-                      styles.bettingChoice,
-                      trade.bettingOn === 'asset2' && styles.bettingChoiceSelected,
+                      styles.directionChoice,
+                      styles.directionChoiceDown,
+                      trade.direction === 'down' && styles.directionChoiceDownSelected,
                     ]}
                   >
+                    <Ionicons 
+                      name="arrow-down" 
+                      size={24} 
+                      color={trade.direction === 'down' ? '#FFF' : theme.colors.bearish} 
+                    />
                     <Text style={[
-                      styles.bettingChoiceText,
-                      trade.bettingOn === 'asset2' && styles.bettingChoiceTextSelected,
+                      styles.directionChoiceText,
+                      styles.directionChoiceTextDown,
+                      trade.direction === 'down' && styles.directionChoiceTextSelected,
                     ]}>
-                      {trade.pair!.asset2}
+                      DOWN
                     </Text>
-                    {trade.bettingOn === 'asset2' && (
-                      <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-                    )}
                   </Pressable>
                 </View>
               </View>
             )}
 
-            {/* Chart toggle button - only show when pair is selected */}
-            {hasPair && (
+            {/* Chart toggle button - only show when asset is selected */}
+            {hasAsset && (
               <Pressable
                 onPress={() => toggleChart(trade.id)}
                 style={styles.chartToggleButton}
@@ -371,12 +359,12 @@ export const TradeScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Expanded Chart Section - single chart for the pair */}
-        {isChartExpanded && hasPair && (
+        {/* Expanded Chart Section - chart for asset/USDC */}
+        {isChartExpanded && hasAsset && (
           <View style={styles.chartsSection}>
-            <Text style={styles.chartLabel}>{trade.pair!.label} Chart</Text>
+            <Text style={styles.chartLabel}>{trade.asset}/USDC</Text>
             <View style={styles.singleChartContainer}>
-              <TradingViewChart symbol={getChartSymbol()} interval="D" />
+              <TradingViewChart symbol={`${trade.asset}USDC`} interval="D" />
             </View>
           </View>
         )}
@@ -602,39 +590,35 @@ export const TradeScreen: React.FC = () => {
         </Pressable>
       </Modal>
 
-      {/* Pair Selector Modal */}
-      <Modal visible={showPairSelector !== null} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowPairSelector(null)}>
+      {/* Asset Selector Modal */}
+      <Modal visible={showAssetSelector !== null} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowAssetSelector(null)}>
           <Animated.View entering={FadeIn} exiting={FadeOut}>
             <GlassPanel style={styles.assetModal}>
               <View style={styles.assetModalHeader}>
-                <Text style={styles.assetModalTitle}>Select Trading Pair</Text>
-                <Pressable onPress={() => setShowPairSelector(null)}>
+                <Text style={styles.assetModalTitle}>Select Asset</Text>
+                <Pressable onPress={() => setShowAssetSelector(null)}>
                   <Ionicons name="close" size={24} color="#FFFFFF" />
                 </Pressable>
               </View>
               <ScrollView style={styles.assetList} showsVerticalScrollIndicator={false}>
-                {AVAILABLE_PAIRS.map((pair) => {
-                  // Find current trade to check if this pair is already selected
-                  const currentTrade = showPairSelector 
-                    ? trades.find(t => t.id === showPairSelector)
+                {AVAILABLE_ASSETS.map((asset) => {
+                  // Find current trade to check if this asset is already selected
+                  const currentTrade = showAssetSelector 
+                    ? trades.find(t => t.id === showAssetSelector)
                     : null;
                   
-                  const isSelected = currentTrade?.pair?.id === pair.id;
+                  const isSelected = currentTrade?.asset === asset;
 
                   return (
                     <Pressable
-                      key={pair.id}
-                      onPress={() => selectPair(pair)}
-                      style={[styles.pairItem, isSelected && styles.pairItemSelected]}
+                      key={asset}
+                      onPress={() => selectAsset(asset)}
+                      style={[styles.assetItem, isSelected && styles.assetItemSelected]}
                     >
-                      <View style={styles.pairItemContent}>
-                        <View style={styles.pairItemAssets}>
-                          <Text style={styles.pairItemAsset}>{pair.asset1}</Text>
-                          <Ionicons name="swap-horizontal" size={16} color="rgba(255,255,255,0.4)" />
-                          <Text style={styles.pairItemAsset}>{pair.asset2}</Text>
-                        </View>
-                        <Text style={styles.pairItemLabel}>{pair.label}</Text>
+                      <View style={styles.assetItemContent}>
+                        <Text style={styles.assetItemSymbol}>{asset}</Text>
+                        <Text style={styles.assetItemPair}>{asset}/USDC</Text>
                       </View>
                       {isSelected && (
                         <Ionicons name="checkmark-circle" size={20} color={theme.colors.success} />
@@ -908,8 +892,8 @@ const styles = StyleSheet.create({
     padding: 2,
   },
 
-  // Pair selector
-  pairSelector: {
+  // Asset selector
+  assetSelector: {
     height: 56,
     borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
@@ -920,72 +904,88 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
   },
-  pairSelectorSelected: {
+  assetSelectorSelected: {
     backgroundColor: 'rgba(255, 107, 53, 0.15)',
     borderColor: '#FF6B35',
     borderStyle: 'solid',
   },
-  selectedPairDisplay: {
+  selectedAssetDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
   },
-  selectedPairText: {
+  selectedAssetText: {
     fontSize: 18,
     fontWeight: '700',
     color: '#FFF',
   },
-  pairPlaceholder: {
+  assetPlaceholder: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     width: '100%',
   },
-  pairPlaceholderText: {
+  assetPlaceholderText: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.4)',
   },
 
-  // Betting section
-  bettingSection: {
+  // Direction section
+  directionSection: {
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
-  bettingLabel: {
+  directionLabel: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.5)',
     marginBottom: 8,
+    textAlign: 'center',
   },
-  bettingChoices: {
+  directionChoices: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
-  bettingChoice: {
+  directionChoice: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
   },
-  bettingChoiceSelected: {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderColor: theme.colors.success,
+  directionChoiceUp: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderColor: 'rgba(34, 197, 94, 0.3)',
   },
-  bettingChoiceText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.6)',
+  directionChoiceDown: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
-  bettingChoiceTextSelected: {
+  directionChoiceUpSelected: {
+    backgroundColor: theme.colors.bullish,
+    borderColor: theme.colors.bullish,
+  },
+  directionChoiceDownSelected: {
+    backgroundColor: theme.colors.bearish,
+    borderColor: theme.colors.bearish,
+  },
+  directionChoiceText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  directionChoiceTextUp: {
+    color: theme.colors.bullish,
+  },
+  directionChoiceTextDown: {
+    color: theme.colors.bearish,
+  },
+  directionChoiceTextSelected: {
     color: '#FFF',
   },
   completeBadge: {
@@ -1244,40 +1244,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 14,
-    marginBottom: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  assetItemDisabled: {
-    opacity: 0.4,
-  },
-  assetItemContent: {
-    flex: 1,
-  },
-  assetItemSymbol: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFF',
-    marginBottom: 2,
-  },
-  assetItemDisabledText: {
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  assetItemName: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  assetItemChange: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Pair item styles
-  pairItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     padding: 16,
     marginBottom: 8,
     borderRadius: 12,
@@ -1285,25 +1251,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  pairItemSelected: {
+  assetItemSelected: {
     backgroundColor: 'rgba(255, 107, 53, 0.15)',
     borderColor: '#FF6B35',
   },
-  pairItemContent: {
+  assetItemContent: {
     flex: 1,
   },
-  pairItemAssets: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  pairItemAsset: {
-    fontSize: 16,
+  assetItemSymbol: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#FFF',
+    marginBottom: 2,
   },
-  pairItemLabel: {
+  assetItemPair: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.5)',
   },
