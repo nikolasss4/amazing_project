@@ -17,6 +17,7 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,8 +34,19 @@ import { TradingViewChart } from '../components/TradingViewChart';
 const QUICK_AMOUNTS = [10, 50, 100, 500];
 const MAX_TRADES = 10;
 
-// Available assets (all traded against USDC)
-const AVAILABLE_ASSETS = ['BTC', 'ETH', 'SOL', 'HYPE', 'ARB'];
+// Available assets (crypto coins only, all traded against USDC)
+const AVAILABLE_ASSETS = ['BTC', 'ETH', 'SOL', 'HYPE', 'ARB', 'XRP', 'BNB'];
+
+// Token logos mapping (using reliable CDN URLs)
+const TOKEN_LOGOS: Record<string, string> = {
+  BTC: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png',
+  ETH: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+  SOL: 'https://assets.coingecko.com/coins/images/4128/small/solana.png',
+  HYPE: 'https://s2.coinmarketcap.com/static/img/coins/64x64/32196.png',
+  ARB: 'https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg',
+  XRP: 'https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png',
+  BNB: 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png',
+};
 
 // A single trade in the bet
 interface BetTrade {
@@ -340,7 +352,16 @@ export const TradeScreen: React.FC = () => {
             >
               {trade.asset ? (
                 <View style={styles.selectedAssetDisplay}>
-                  <Text style={styles.selectedAssetText}>{trade.asset}/USDC</Text>
+                  <View style={styles.selectedAssetLeft}>
+                    <View style={styles.selectedAssetLogoContainer}>
+                      <Image 
+                        source={{ uri: TOKEN_LOGOS[trade.asset] }} 
+                        style={styles.selectedAssetLogo}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={styles.selectedAssetText}>{trade.asset}/USDC</Text>
+                  </View>
                   <Ionicons name="chevron-down" size={18} color="rgba(255,255,255,0.6)" />
                 </View>
               ) : (
@@ -351,6 +372,33 @@ export const TradeScreen: React.FC = () => {
                 </View>
               )}
             </Pressable>
+
+            {/* Chart toggle button - only show when asset is selected */}
+            {hasAsset && (
+              <Pressable
+                onPress={() => toggleChart(trade.id)}
+                style={styles.chartToggleButton}
+              >
+                <Ionicons 
+                  name={isChartExpanded ? "chevron-up" : "analytics-outline"} 
+                  size={14} 
+                  color="#FF6B35" 
+                />
+                <Text style={styles.chartToggleText}>
+                  {isChartExpanded ? 'Hide Chart' : 'View Chart'}
+                </Text>
+              </Pressable>
+            )}
+
+            {/* Expanded Chart Section - appears between chart button and direction buttons */}
+            {isChartExpanded && hasAsset && (
+              <View style={styles.chartsSection}>
+                <Text style={styles.chartLabel}>{trade.asset}/USDC</Text>
+                <View style={styles.singleChartContainer}>
+                  <TradingViewChart symbol={`${trade.asset}USDC`} interval="D" />
+                </View>
+              </View>
+            )}
 
             {/* Direction choice - only show when asset is selected */}
             {hasAsset && (
@@ -367,7 +415,7 @@ export const TradeScreen: React.FC = () => {
                   >
                     <Ionicons 
                       name="arrow-up" 
-                      size={24} 
+                      size={16} 
                       color={trade.direction === 'up' ? '#FFF' : theme.colors.bullish} 
                     />
                     <Text style={[
@@ -388,7 +436,7 @@ export const TradeScreen: React.FC = () => {
                   >
                     <Ionicons 
                       name="arrow-down" 
-                      size={24} 
+                      size={16} 
                       color={trade.direction === 'down' ? '#FFF' : theme.colors.bearish} 
                     />
                     <Text style={[
@@ -402,23 +450,6 @@ export const TradeScreen: React.FC = () => {
                 </View>
               </View>
             )}
-
-            {/* Chart toggle button - only show when asset is selected */}
-            {hasAsset && (
-              <Pressable
-                onPress={() => toggleChart(trade.id)}
-                style={styles.chartToggleButton}
-              >
-                <Ionicons 
-                  name={isChartExpanded ? "chevron-up" : "analytics-outline"} 
-                  size={16} 
-                  color="#FF6B35" 
-                />
-                <Text style={styles.chartToggleText}>
-                  {isChartExpanded ? 'Hide Chart' : 'View Chart'}
-                </Text>
-              </Pressable>
-            )}
           </View>
 
           {/* Completion indicator */}
@@ -428,16 +459,6 @@ export const TradeScreen: React.FC = () => {
             </View>
           )}
         </View>
-
-        {/* Expanded Chart Section - chart for asset/USDC */}
-        {isChartExpanded && hasAsset && (
-          <View style={styles.chartsSection}>
-            <Text style={styles.chartLabel}>{trade.asset}/USDC</Text>
-            <View style={styles.singleChartContainer}>
-              <TradingViewChart symbol={`${trade.asset}USDC`} interval="D" />
-            </View>
-          </View>
-        )}
       </View>
     );
   };
@@ -466,21 +487,22 @@ export const TradeScreen: React.FC = () => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
+          {/* Header - Profile and Wallet */}
           <View style={styles.header}>
-            <View style={styles.headerRow}>
-              <View style={styles.headerLeft}>
-                <Text style={styles.title}>Make Your Bet</Text>
-                <Text style={styles.subtitle}>Build your trade with up to {MAX_TRADES} pairs</Text>
+            <View style={styles.profileWalletContainer}>
+              {/* Profile Picture */}
+              <View style={styles.profilePicture}>
+                <Ionicons name="person" size={24} color="#FF6B35" />
               </View>
               {/* Wallet Connection */}
               {isConnected ? (
                 <Pressable style={styles.walletButton} onPress={() => setShowWalletModal(true)}>
+                  <Ionicons name="wallet" size={18} color="#FF6B35" />
                   <Text style={styles.walletText}>{formatAddress(walletAddress)}</Text>
                 </Pressable>
               ) : (
                 <Pressable style={styles.connectButton} onPress={() => setShowWalletModal(true)}>
-                  <Ionicons name="wallet-outline" size={18} color="#FFF" />
+                  <Ionicons name="wallet-outline" size={18} color="#FF6B35" />
                   <Text style={styles.connectText}>Connect</Text>
                 </Pressable>
               )}
@@ -501,7 +523,7 @@ export const TradeScreen: React.FC = () => {
           >
             <View style={styles.mainPanelContent}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionLabel}>Choose Your Trade</Text>
+                <Text style={styles.sectionLabel}>Choose Your Bet</Text>
                 <Pressable onPress={autoBalanceWeights} style={styles.balanceButton}>
                   <Text style={styles.balanceButtonText}>Balance Weights</Text>
                 </Pressable>
@@ -798,13 +820,13 @@ export const TradeScreen: React.FC = () => {
       </Modal>
 
       {/* Asset Selector Modal */}
-      <Modal visible={showAssetSelector !== null} transparent animationType="slide">
+      <Modal visible={showAssetSelector !== null} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setShowAssetSelector(null)}>
-          <Animated.View entering={FadeIn} exiting={FadeOut}>
+          <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.assetModalAnimated}>
             <GlassPanel style={styles.assetModal}>
               <View style={styles.assetModalHeader}>
                 <Text style={styles.assetModalTitle}>Select Asset</Text>
-                <Pressable onPress={() => setShowAssetSelector(null)}>
+                <Pressable onPress={() => setShowAssetSelector(null)} style={styles.modalCloseButton}>
                   <Ionicons name="close" size={24} color="#FFFFFF" />
                 </Pressable>
               </View>
@@ -823,9 +845,18 @@ export const TradeScreen: React.FC = () => {
                       onPress={() => selectAsset(asset)}
                       style={[styles.assetItem, isSelected && styles.assetItemSelected]}
                     >
-                      <View style={styles.assetItemContent}>
-                        <Text style={styles.assetItemSymbol}>{asset}</Text>
-                        <Text style={styles.assetItemPair}>{asset}/USDC</Text>
+                      <View style={styles.assetItemRow}>
+                        <View style={styles.assetLogoContainer}>
+                          <Image 
+                            source={{ uri: TOKEN_LOGOS[asset] }} 
+                            style={styles.assetLogo}
+                            resizeMode="contain"
+                          />
+                        </View>
+                        <View style={styles.assetItemContent}>
+                          <Text style={styles.assetItemSymbol}>{asset}</Text>
+                          <Text style={styles.assetItemPair}>{asset}/USDC</Text>
+                        </View>
                       </View>
                       {isSelected && (
                         <Ionicons name="checkmark-circle" size={20} color={theme.colors.success} />
@@ -968,55 +999,54 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.xl,
   },
-  headerRow: {
+  profileWalletContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 14,
   },
-  headerLeft: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#FFF',
-    marginBottom: 4,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.6)',
+  profilePicture: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   walletButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(76, 175, 80, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.5)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
   },
   walletText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#FF6B35',
   },
   connectButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 107, 53, 0.4)',
   },
   connectText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#FFF',
+    color: '#FF6B35',
   },
 
   // Main Panel
@@ -1158,6 +1188,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
   },
+  selectedAssetLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectedAssetLogoContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    overflow: 'hidden',
+  },
+  selectedAssetLogo: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
   selectedAssetText: {
     fontSize: 18,
     fontWeight: '700',
@@ -1177,30 +1226,30 @@ const styles = StyleSheet.create({
 
   // Direction section
   directionSection: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 10,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   directionLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: 'rgba(255, 255, 255, 0.5)',
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: 'center',
   },
   directionChoices: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   directionChoice: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
   },
   directionChoiceUp: {
     backgroundColor: 'rgba(34, 197, 94, 0.1)',
@@ -1219,7 +1268,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.bearish,
   },
   directionChoiceText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
   },
   directionChoiceTextUp: {
@@ -1256,26 +1305,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    gap: 5,
+    marginTop: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
     backgroundColor: 'rgba(255, 107, 53, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(255, 107, 53, 0.2)',
   },
   chartToggleText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#FF6B35',
   },
 
   // Charts section
   chartsSection: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: 12,
+    marginBottom: 4,
   },
   chartsRow: {
     flexDirection: 'row',
@@ -1298,8 +1345,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
   singleChartContainer: {
-    height: 180,
-    borderRadius: 8,
+    height: 320,
+    minHeight: 320,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
@@ -1464,32 +1512,49 @@ const styles = StyleSheet.create({
   },
 
   // Asset modal
+  assetModalAnimated: {
+    width: '100%',
+    alignItems: 'center',
+  },
   assetModal: {
     width: '90%',
-    maxHeight: '70%',
+    maxWidth: 400,
+    maxHeight: '75%',
     padding: 20,
+    borderRadius: 20,
   },
   assetModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   assetModalTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#FFF',
   },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   assetList: {
-    maxHeight: 400,
+    maxHeight: 450,
   },
   assetItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
-    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 14,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
     borderColor: 'transparent',
@@ -1498,11 +1563,31 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 107, 53, 0.15)',
     borderColor: '#FF6B35',
   },
+  assetItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  assetLogoContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    overflow: 'hidden',
+  },
+  assetLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
   assetItemContent: {
     flex: 1,
   },
   assetItemSymbol: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#FFF',
     marginBottom: 2,
