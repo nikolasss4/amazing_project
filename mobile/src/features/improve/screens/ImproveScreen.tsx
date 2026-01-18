@@ -257,10 +257,6 @@ export const ImproveScreen: React.FC = () => {
     handleNextScenario();
   };
 
-  // Handle "Skip" button press (advances to next question)
-  function handleSkip() {
-    handleNextScenario();
-  }
 
   const getAnswerIcon = (answer: Answer): keyof typeof Ionicons.glyphMap => {
     return answer === 'up' ? 'trending-up' : 'trending-down';
@@ -284,14 +280,19 @@ export const ImproveScreen: React.FC = () => {
             {/* Streak indicator with pulse animation */}
             <Animated.View style={[styles.streakChipContainer, streakAnimatedStyle]}>
               <GlassPanel style={[styles.streakChip, streak >= 5 && styles.streakChipGlow]}>
-                <Ionicons
-                  name="flame"
-                  size={16}
-                  color={streak >= 5 ? theme.colors.warning : theme.colors.textSecondary}
-                />
-                <Text style={[styles.streakText, streak >= 5 && styles.streakTextGlow]}>
-                  {streak > 0 ? Math.pow(2, streak - 1) : 0}
-                </Text>
+                <View style={styles.streakChipContent}>
+                  <Ionicons
+                    name="flame"
+                    size={16}
+                    color={streak >= 5 ? theme.colors.warning : theme.colors.textSecondary}
+                  />
+                  <Text 
+                    style={[styles.streakText, streak >= 5 && styles.streakTextGlow]}
+                    numberOfLines={1}
+                  >
+                    {streak > 0 ? Math.pow(2, streak - 1) : 0}
+                  </Text>
+                </View>
               </GlassPanel>
             </Animated.View>
           </View>
@@ -356,12 +357,6 @@ export const ImproveScreen: React.FC = () => {
                       />
                     </View>
                   </View>
-
-                  {/* Skip button in corner */}
-                  <Pressable style={styles.skipButton} onPress={handleSkip}>
-                    <Text style={styles.skipText}>Skip</Text>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
-                  </Pressable>
                   </View>
                 </Animated.View>
 
@@ -707,11 +702,15 @@ const styles = StyleSheet.create({
   },
   streakChipContainer: {},
   streakChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.xs,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.xs,
+  },
+  streakChipContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: theme.spacing.xs,
+    flexWrap: 'nowrap',
   },
   streakChipGlow: {
     ...theme.shadows.glow,
@@ -863,21 +862,6 @@ const styles = StyleSheet.create({
   upDownButtonText: {
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.bold,
-  },
-  // Skip button
-  skipButton: {
-    position: 'absolute',
-    bottom: theme.spacing.sm,
-    right: theme.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-  },
-  skipText: {
-    fontSize: theme.typography.sizes.xs,
-    color: theme.colors.textTertiary,
   },
   // Analysis section (solution back)
   analysisContainer: {
