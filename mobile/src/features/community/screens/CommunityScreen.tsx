@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +30,38 @@ import { Avatar } from '../components/Avatar';
 type LeaderboardPeriod = 'today' | 'week' | 'month' | 'all-time';
 type CommunitySection = 'leaderboard' | 'global';
 
+// Deterministic shuffle function based on seed
+function seededShuffle<T>(array: T[], seed: string): T[] {
+  // Simple seeded random number generator
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    const char = seed.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  
+  const shuffled = [...array];
+  let random = Math.abs(hash);
+  
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    random = (random * 9301 + 49297) % 233280;
+    const j = Math.floor((random / 233280) * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  
+  return shuffled;
+}
+
+// Get shuffled leaderboard for a specific period
+function getShuffledLeaderboard(period: LeaderboardPeriod, baseData: LeaderboardEntry[]): LeaderboardEntry[] {
+  const shuffled = seededShuffle(baseData, `leaderboard-${period}`);
+  // Update ranks after shuffling
+  return shuffled.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
+  }));
+}
+
 export const CommunityScreen: React.FC = () => {
   const { streak: storeStreak, totalXP: storeTotalXP } = useLearnStore();
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('today');
@@ -44,6 +76,17 @@ export const CommunityScreen: React.FC = () => {
   // Use mock values if store values are 0, otherwise use store values
   const streak = storeStreak > 0 ? storeStreak : 42;
   const totalXP = storeTotalXP > 0 ? storeTotalXP : 1250;
+
+  // Get shuffled leaderboard data based on selected period
+  const currentLeaderboard = useMemo(
+    () => getShuffledLeaderboard(leaderboardPeriod, mockLeaderboard),
+    [leaderboardPeriod]
+  );
+
+  const currentFriendsLeaderboard = useMemo(
+    () => getShuffledLeaderboard(leaderboardPeriod, mockFriendsLeaderboard),
+    [leaderboardPeriod]
+  );
 
   const handlePeriodSelect = (period: LeaderboardPeriod) => {
     setLeaderboardPeriod(period);
@@ -299,7 +342,7 @@ export const CommunityScreen: React.FC = () => {
                       <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
                     </View>
 
-                    {mockLeaderboard.map((entry) => (
+                    {currentLeaderboard.map((entry) => (
                       <View key={entry.userId} style={styles.tableRow}>
                         <View style={styles.rankCol}>
                           <Text style={styles.rankText}>#{entry.rank}</Text>
@@ -393,7 +436,7 @@ export const CommunityScreen: React.FC = () => {
                       <Text style={[styles.tableHeaderText, styles.winRateCol]}>Win Rate</Text>
                     </View>
 
-                    {mockFriendsLeaderboard.map((entry) => (
+                    {currentFriendsLeaderboard.map((entry) => (
                       <View key={entry.userId} style={styles.tableRow}>
                         <View style={styles.rankCol}>
                           <Text style={styles.rankText}>#{entry.rank}</Text>
@@ -819,7 +862,7 @@ const styles = StyleSheet.create({
   },
   flipContainer: {
     width: '100%',
-    height: 500, // Height to show header, filters, and top 5 rows
+    height: 580, // Height to show header, filters, and more rows
     position: 'relative',
   },
   flipCard: {
@@ -856,7 +899,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.semibold,
   },
   tableScrollView: {
-    maxHeight: 380, // Height to show exactly 5 rows initially (table header + 5 rows + gaps)
+    maxHeight: 460, // Height to show more rows (table header + rows + gaps)
   },
   tableScrollContent: {
     paddingBottom: theme.spacing.xs,
