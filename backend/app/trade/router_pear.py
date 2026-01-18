@@ -14,6 +14,7 @@ Agent Wallet Flow:
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.core.logging import get_logger
 from app.core.security import AuthenticatedUser
@@ -190,9 +191,16 @@ async def authenticate_server(
         )
 
 
+class WalletAuthRequest(BaseModel):
+    """Request body for wallet authentication."""
+    address: str
+    privateKey: str | None = None
+
+
 @router.post("/auth/authenticate-wallet")
 async def authenticate_wallet(
-    address: str = Query(..., description="Wallet address to authenticate"),
+    request: WalletAuthRequest = None,
+    address: str = Query(default=None, description="Wallet address to authenticate (deprecated, use body)"),
     service: PearServiceDep = None,
 ) -> dict[str, Any]:
     """
@@ -200,32 +208,48 @@ async def authenticate_wallet(
     
     This endpoint performs the complete authentication flow:
     1. Gets EIP-712 message from Pear API for the user's address
-    2. Signs it using server's private key (for simplicity - simulating wallet signing)
+    2. Signs it using the provided private key
     3. Calls /auth/login with the signature
     4. Returns success/failure
     
     Args:
-        address: The wallet address to authenticate
+        request: Request body containing address and privateKey
+        address: (deprecated) Query param for backward compatibility
         
     Returns:
         Success status and access token if successful
     """
+    # Get address from request body or query param (backward compatibility)
+    wallet_address = request.address if request else address
+    private_key = request.privateKey if request else None
+    
+    if not wallet_address:
+        return {
+            "success": False,
+            "authenticated": False,
+            "error": "Wallet address is required",
+            "message": "Please provide a wallet address"
+        }
+    
     logger.info("=" * 80)
     logger.info("WALLET AUTHENTICATION REQUEST")
     logger.info("=" * 80)
-    logger.info(f"Address: {address}")
+    logger.info(f"Address: {wallet_address}")
+    logger.info(f"Private Key provided: {'Yes' if private_key else 'No'}")
+    if private_key:
+        logger.info(f"Private Key (masked): {private_key[:8]}...{private_key[-4:]}")
     logger.info(f"Client ID: HLHackathon1")
     
     try:
         # Step 1: Get EIP-712 message for this specific address
         logger.info("Step 1: Getting EIP-712 message for user's address...")
-        eip712_result = await service.get_eip712_message(address, "HLHackathon1")
-        logger.info(f"✓ EIP-712 message received")
+        eip712_result = await service.get_eip712_message(wallet_address, "HLHackathon1")
+        logger.info(f"EIP-712 message received")
         logger.info(f"  Message address: {eip712_result.message.get('address')}")
         logger.info(f"  Message clientId: {eip712_result.message.get('clientId')}")
         logger.info(f"  Message timestamp: {eip712_result.message.get('timestamp')}")
         
-        # Step 2: Sign the message using server's key (simulating wallet signature)
+        # Step 2: Sign the message using the provided private key or server's key
         logger.info("Step 2: Signing EIP-712 message...")
         auth_service = get_pear_auth_service()
         
@@ -236,20 +260,26 @@ async def authenticate_wallet(
             "message": eip712_result.message
         }
         
-        signature, timestamp = auth_service.sign_eip712_message(eip712_data)
-        logger.info(f"✓ Message signed")
+        # Sign with provided private key if available, otherwise use server's key
+        if private_key:
+            signature, timestamp = auth_service.sign_eip712_message_with_key(eip712_data, private_key)
+            logger.info(f"Message signed with provided private key")
+        else:
+            signature, timestamp = auth_service.sign_eip712_message(eip712_data)
+            logger.info(f"Message signed with server key")
+        
         logger.info(f"  Signature: {signature[:20]}...")
         logger.info(f"  Timestamp: {timestamp}")
         
         # Step 3: Login with the signature
         logger.info("Step 3: Calling /auth/login endpoint...")
         access_token = await auth_service.login(
-            address=address,
+            address=wallet_address,
             client_id="HLHackathon1",
             signature=signature,
             timestamp=timestamp
         )
-        logger.info(f"✓ Login successful")
+        logger.info(f"Login successful")
         logger.info(f"  Access token: {access_token[:20]}...")
         
         logger.info("=" * 80)
@@ -259,7 +289,7 @@ async def authenticate_wallet(
         return {
             "success": True,
             "authenticated": True,
-            "address": address,
+            "address": wallet_address,
             "accessToken": access_token,
             "message": "Wallet authenticated successfully"
         }
@@ -274,7 +304,7 @@ async def authenticate_wallet(
         return {
             "success": False,
             "authenticated": False,
-            "address": address,
+            "address": wallet_address,
             "error": str(e),
             "message": "Failed to authenticate wallet"
         }
@@ -564,22 +594,92 @@ async def create_position_trade(
     This endpoint accepts the full Pear Protocol position format
     and logs the wallet address for tracking purposes.
     """
-    logger.info(
-        "Position trade request received",
-        wallet_address=request.walletAddress,
-        execution_type=request.executionType,
-        usd_value=request.usdValue,
-        leverage=request.leverage,
-    )
+    import uuid
+    from datetime import datetime
+    
+    logger.info("=" * 80)
+    logger.info("POSITION TRADE REQUEST RECEIVED")
+    logger.info("=" * 80)
+    logger.info(f"Wallet Address: {request.walletAddress}")
+    logger.info(f"Execution Type: {request.executionType}")
+    logger.info(f"USD Value: {request.usdValue}")
+    logger.info(f"Leverage: {request.leverage}")
+    logger.info(f"Slippage: {request.slippage}")
+    logger.info(f"Long Assets: {request.longAssets}")
+    logger.info(f"Short Assets: {request.shortAssets}")
+    logger.info("=" * 80)
+    
+    # Generate a position ID for tracking
+    position_id = f"pos_{uuid.uuid4().hex[:12]}"
     
     # For now, return success response
     # In production, this would forward to Pear Protocol API
-    return {
+    response = {
         "success": True,
-        "message": "Position trade request received",
+        "positionId": position_id,
+        "message": f"Trade submitted successfully! Amount: ${request.usdValue}",
         "walletAddress": request.walletAddress,
         "usdValue": request.usdValue,
+        "timestamp": datetime.utcnow().isoformat(),
     }
+    
+    logger.info("POSITION TRADE RESPONSE")
+    logger.info(f"Response: {response}")
+    logger.info("=" * 80)
+    
+    return response
+
+
+# ============================================================================
+# Spot Order Endpoints
+# ============================================================================
+
+
+@router.post("/orders/spot")
+async def create_spot_order(
+    request: dict[str, Any],
+    service: PearServiceDep,
+) -> dict[str, Any]:
+    """
+    Create a single spot order.
+    
+    This endpoint accepts spot order requests for single asset trades.
+    """
+    import uuid
+    from datetime import datetime
+    
+    logger.info("=" * 80)
+    logger.info("SPOT ORDER REQUEST RECEIVED")
+    logger.info("=" * 80)
+    logger.info(f"Request: {request}")
+    logger.info("=" * 80)
+    
+    asset = request.get("asset", "UNKNOWN")
+    is_buy = request.get("isBuy", True)
+    amount = request.get("amount", 0)
+    wallet_address = request.get("walletAddress", "")
+    
+    # Generate an order ID for tracking
+    order_id = f"ord_{uuid.uuid4().hex[:12]}"
+    
+    # For now, return success response
+    # In production, this would forward to Pear Protocol API
+    response = {
+        "success": True,
+        "orderId": order_id,
+        "message": f"{'Buy' if is_buy else 'Sell'} order for {amount} {asset} submitted successfully!",
+        "asset": asset,
+        "isBuy": is_buy,
+        "amount": amount,
+        "walletAddress": wallet_address,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    
+    logger.info("SPOT ORDER RESPONSE")
+    logger.info(f"Response: {response}")
+    logger.info("=" * 80)
+    
+    return response
 
 
 # ============================================================================

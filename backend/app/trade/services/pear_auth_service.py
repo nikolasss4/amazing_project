@@ -177,6 +177,63 @@ class PearAuthService:
             logger.error("Failed to sign EIP-712 message", error=str(e))
             raise ExternalServiceError("Pear Protocol", f"Failed to sign message: {str(e)}")
     
+    def sign_eip712_message_with_key(self, eip712_data: dict[str, Any], private_key: str) -> tuple[str, str]:
+        """
+        Sign an EIP-712 typed data message with a custom private key.
+        
+        Args:
+            eip712_data: The EIP-712 data containing domain, types, and message
+            private_key: The private key to use for signing (64 hex chars, with or without 0x prefix)
+            
+        Returns:
+            Tuple of (signature, timestamp from message)
+        """
+        if not private_key:
+            raise ExternalServiceError("Pear Protocol", "No private key provided")
+            
+        # Extract components
+        domain = eip712_data["domain"]
+        types = eip712_data["types"].copy()
+        message = eip712_data["message"]
+        
+        # Remove EIP712Domain from types if present (required for eth_account)
+        if "EIP712Domain" in types:
+            del types["EIP712Domain"]
+            
+        logger.info("Signing EIP-712 message with provided private key")
+        logger.debug("Domain", domain=domain)
+        logger.debug("Message", message=message)
+        
+        try:
+            # Ensure private key has 0x prefix
+            pk = private_key if private_key.startswith('0x') else f'0x{private_key}'
+            
+            # Create the structured message for signing
+            signable_message = encode_typed_data(
+                domain_data=domain,
+                message_types=types,
+                message_data=message
+            )
+            
+            # Sign the message
+            signed = Account.sign_message(signable_message, pk)
+            signature = signed.signature.hex()
+            
+            # Ensure signature has 0x prefix
+            if not signature.startswith('0x'):
+                signature = f'0x{signature}'
+                
+            timestamp = message.get("timestamp", "")
+            
+            logger.info("Message signed successfully with custom key")
+            logger.debug("Signature", signature=signature[:20] + "...")
+            
+            return signature, timestamp
+            
+        except Exception as e:
+            logger.error("Failed to sign EIP-712 message with custom key", error=str(e))
+            raise ExternalServiceError("Pear Protocol", f"Failed to sign message: {str(e)}")
+    
     async def login(
         self, 
         address: str | None = None,

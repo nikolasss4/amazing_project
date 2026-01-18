@@ -56,12 +56,15 @@ export const TradeScreen: React.FC = () => {
 
   // UI state
   const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>('Your trade is being executed');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssetSelector, setShowAssetSelector] = useState<string | null>(null); // tradeId
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [walletInputAddress, setWalletInputAddress] = useState('');
+  const [walletPrivateKey, setWalletPrivateKey] = useState('');
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
   const [expandedCharts, setExpandedCharts] = useState<Set<string>>(new Set());
 
   // Toggle chart expansion for a trade
@@ -91,12 +94,19 @@ export const TradeScreen: React.FC = () => {
 
   const handleConnectWallet = async () => {
     setWalletError(null);
+    setIsConnectingWallet(true);
     try {
-      await connect(walletInputAddress);
+      console.log('Connecting wallet:', walletInputAddress);
+      await connect(walletInputAddress, walletPrivateKey);
+      console.log('Wallet connected successfully!');
       setWalletInputAddress('');
+      setWalletPrivateKey('');
       setShowWalletModal(false);
     } catch (error) {
+      console.error('Wallet connection failed:', error);
       setWalletError(error instanceof Error ? error.message : 'Failed to connect wallet');
+    } finally {
+      setIsConnectingWallet(false);
     }
   };
 
@@ -199,21 +209,40 @@ export const TradeScreen: React.FC = () => {
         orderType: 'market',
       };
 
+      console.log('Placing trade with order:', JSON.stringify(order, null, 2));
+      console.log('Wallet address:', walletAddress);
+
       const response = await TradeService.submitOrder(order as any, walletAddress || '');
 
+      console.log('Trade response:', JSON.stringify(response, null, 2));
+
       if (response.success) {
+        // Build detailed success message
+        let msg = response.message || 'Trade submitted successfully!';
+        if (response.orderId) {
+          msg += ` Order ID: ${response.orderId}`;
+        }
+        if (response.positionId) {
+          msg += ` Position ID: ${response.positionId}`;
+        }
+        setSuccessMessage(msg);
         setShowSuccess(true);
         setTimeout(() => {
           setShowSuccess(false);
           setAmount('');
           // Reset to single empty trade
           setTrades([{ id: generateId(), asset: null, direction: null, weight: 100 }]);
-        }, 2000);
+        }, 3000);
       } else {
-        setError(response.error || 'Trade failed');
+        // Show detailed error message
+        const errorMsg = response.error || 'Trade failed. Please try again.';
+        console.error('Trade failed:', errorMsg);
+        setError(errorMsg);
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Network error');
+      const errorMsg = error instanceof Error ? error.message : 'Network error. Please check your connection.';
+      console.error('Trade error:', errorMsg);
+      setError(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -569,7 +598,7 @@ export const TradeScreen: React.FC = () => {
           <GlassPanel style={styles.successModal}>
             <Ionicons name="checkmark-circle" size={64} color={theme.colors.success} />
             <Text style={styles.successText}>Bet Placed!</Text>
-            <Text style={styles.successSubtext}>Your trade is being executed</Text>
+            <Text style={styles.successSubtext}>{successMessage}</Text>
           </GlassPanel>
         </Animated.View>
       </Modal>
@@ -641,6 +670,7 @@ export const TradeScreen: React.FC = () => {
               setShowWalletModal(false);
               setWalletError(null);
               setWalletInputAddress('');
+              setWalletPrivateKey('');
             }}
           />
           <Animated.View entering={FadeIn} exiting={FadeOut} style={{ zIndex: 1 }}>
@@ -668,20 +698,49 @@ export const TradeScreen: React.FC = () => {
                 <View style={styles.walletModalContent}>
                   <Ionicons name="wallet-outline" size={48} color="#FF6B35" />
                   <Text style={styles.walletDescription}>
-                    Enter your Ethereum wallet address to start trading
+                    Enter your wallet address and private key to authenticate and start trading
                   </Text>
-                  <TextInput
-                    style={styles.walletInput}
-                    value={walletInputAddress}
-                    onChangeText={(text) => {
-                      setWalletInputAddress(text);
-                      setWalletError(null);
-                    }}
-                    placeholder="0x..."
-                    placeholderTextColor="rgba(255, 255, 255, 0.4)"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
+                  
+                  {/* Wallet Address Input */}
+                  <View style={styles.inputFieldContainer}>
+                    <Text style={styles.inputFieldLabel}>Wallet Address</Text>
+                    <TextInput
+                      style={styles.walletInput}
+                      value={walletInputAddress}
+                      onChangeText={(text) => {
+                        setWalletInputAddress(text);
+                        setWalletError(null);
+                      }}
+                      placeholder="0x742d35Cc6634C0532925a3b844Bc9e7595f..."
+                      placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!isConnectingWallet}
+                    />
+                  </View>
+                  
+                  {/* Private Key Input */}
+                  <View style={styles.inputFieldContainer}>
+                    <Text style={styles.inputFieldLabel}>Private Key</Text>
+                    <TextInput
+                      style={styles.walletInput}
+                      value={walletPrivateKey}
+                      onChangeText={(text) => {
+                        setWalletPrivateKey(text);
+                        setWalletError(null);
+                      }}
+                      placeholder="a1b2c3d4e5f67890abcdef1234567890abcdef12345678XXXXXX"
+                      placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      secureTextEntry={true}
+                      editable={!isConnectingWallet}
+                    />
+                    <Text style={styles.privateKeyHint}>
+                      64 hex characters (without 0x prefix)
+                    </Text>
+                  </View>
+                  
                   {walletError && (
                     <View style={styles.walletErrorBox}>
                       <Ionicons name="alert-circle" size={16} color={theme.colors.error} />
@@ -693,10 +752,16 @@ export const TradeScreen: React.FC = () => {
                     onPress={handleConnectWallet}
                     fullWidth
                     size="lg"
-                    disabled={!walletInputAddress}
+                    disabled={!walletInputAddress || !walletPrivateKey || isConnectingWallet}
+                    loading={isConnectingWallet}
                   >
-                    Connect Wallet
+                    {isConnectingWallet ? 'Authenticating...' : 'Connect & Authenticate'}
                   </Button>
+                  {isConnectingWallet && (
+                    <Text style={styles.connectingHint}>
+                      Connecting to backend for authentication...
+                    </Text>
+                  )}
                 </View>
               )}
             </GlassPanel>
@@ -1332,5 +1397,26 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: theme.colors.error,
+  },
+  connectingHint: {
+    marginTop: 12,
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textAlign: 'center',
+  },
+  inputFieldContainer: {
+    width: '100%',
+    marginBottom: 8,
+  },
+  inputFieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 6,
+  },
+  privateKeyHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.4)',
   },
 });

@@ -96,6 +96,25 @@ export interface PearTradeResponse {
   error?: string;
 }
 
+/**
+ * Multi-pair order leg format
+ */
+export interface MultiPairLeg {
+  longAsset: string;
+  shortAsset: string;
+  weight: number;
+}
+
+/**
+ * Multi-pair order format (from TradeScreen)
+ */
+export interface MultiPairOrder {
+  type: 'multi-pair';
+  legs: MultiPairLeg[];
+  amount: number;
+  orderType: 'market' | 'limit';
+}
+
 class TradeServiceClass {
   /**
    * Base URL for Pear Execution API
@@ -118,44 +137,110 @@ class TradeServiceClass {
    * Routes to appropriate endpoint based on order type:
    * - Single token trades -> /orders/spot
    * - Pair/basket trades -> /positions
+   * - Multi-pair trades -> /positions (aggregated)
    */
-  async submitOrder(order: TradeOrder, walletAddress: string): Promise<PearTradeResponse> {
+  async submitOrder(order: TradeOrder | MultiPairOrder, walletAddress: string): Promise<PearTradeResponse> {
     console.log('\n' + '='.repeat(80));
-    console.log('🚀 SUBMITTING TRADE ORDER');
+    console.log('SUBMITTING TRADE ORDER');
     console.log('='.repeat(80));
-    console.log('🌐 Platform:', Platform.OS);
-    console.log('📦 Order Type:', order.type);
-    console.log('💰 Amount:', order.amount);
-    console.log('📍 Side:', order.side);
-    console.log('👛 Wallet:', walletAddress);
-    console.log('📡 API Base URL:', this.apiBaseUrl);
+    console.log('Platform:', Platform.OS);
+    console.log('Order Type:', order.type);
+    console.log('Amount:', order.amount);
+    console.log('Wallet:', walletAddress);
+    console.log('API Base URL:', this.apiBaseUrl);
     
     try {
       // Get access token
-      console.log('🔑 Getting access token...');
+      console.log('Getting access token...');
       const accessToken = await this.getAccessToken();
-      console.log('🔑 Access token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
+      console.log('Access token:', accessToken ? accessToken.substring(0, 20) + '...' : 'NONE');
 
       // Route to appropriate endpoint based on order type
-      if (order.type === 'single' && order.pair) {
-        console.log('➡️  Routing to SINGLE spot order endpoint');
-        return await this.submitSpotOrder(order, accessToken, walletAddress);
+      if (order.type === 'multi-pair') {
+        console.log('Routing to MULTI-PAIR position endpoint');
+        return await this.submitMultiPairPosition(order as MultiPairOrder, accessToken, walletAddress);
+      } else if (order.type === 'single' && (order as TradeOrder).pair) {
+        console.log('Routing to SINGLE spot order endpoint');
+        return await this.submitSpotOrder(order as TradeOrder, accessToken, walletAddress);
       } else if (order.type === 'pair' || order.type === 'theme') {
-        console.log('➡️  Routing to PAIR/BASKET position endpoint');
-        return await this.submitPosition(order, accessToken, walletAddress);
+        console.log('Routing to PAIR/BASKET position endpoint');
+        return await this.submitPosition(order as TradeOrder, accessToken, walletAddress);
       } else {
-        console.error('❌ Invalid order type!');
+        console.error('Invalid order type!');
         return {
           success: false,
-          error: 'Invalid order type. Must be single token or pair trade.',
+          error: 'Invalid order type. Must be single token, pair trade, or multi-pair.',
         };
       }
     } catch (error) {
-      console.error('❌ TradeService error:', error);
+      console.error('TradeService error:', error);
       console.log('='.repeat(80) + '\n');
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  /**
+   * Submit a multi-pair position trade
+   * This is for the new "Make Your Bet" interface
+   */
+  private async submitMultiPairPosition(
+    order: MultiPairOrder,
+    accessToken: string,
+    walletAddress: string
+  ): Promise<PearTradeResponse> {
+    const url = `${this.apiBaseUrl}/positions`;
+    
+    try {
+      // Build long and short assets from legs
+      const longAssets: Array<{ asset: string; weight: number }> = [];
+      const shortAssets: Array<{ asset: string; weight: number }> = [];
+      
+      for (const leg of order.legs) {
+        if (leg.longAsset !== 'USDC') {
+          longAssets.push({ asset: leg.longAsset, weight: leg.weight / 100 });
+        }
+        if (leg.shortAsset !== 'USDC') {
+          shortAssets.push({ asset: leg.shortAsset, weight: leg.weight / 100 });
+        }
+      }
+
+      const requestBody = {
+        slippage: 0.01,
+        executionType: 'MARKET',
+        leverage: 1,
+        usdValue: order.amount,
+        longAssets: longAssets.length > 0 ? longAssets : undefined,
+        shortAssets: shortAssets.length > 0 ? shortAssets : undefined,
+        walletAddress,
+      };
+
+      console.log('\n' + '='.repeat(80));
+      console.log('MULTI-PAIR POSITION REQUEST');
+      console.log('='.repeat(80));
+      console.log('URL:', url);
+      console.log('Body:', JSON.stringify(requestBody, null, 2));
+      console.log('Making POST request...');
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log('Response Status:', response.status);
+      return await this.handleApiResponse(response);
+    } catch (error) {
+      console.error('Multi-pair position error:', error);
+      console.log('='.repeat(80) + '\n');
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to execute multi-pair trade',
       };
     }
   }
